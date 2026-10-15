@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   connectionChanged,
   connectionConfig,
+  preferredConnectionHost,
   validConfig,
   type Config,
 } from "./api";
@@ -14,6 +15,18 @@ const config: Config = {
   token: "a".repeat(32),
 };
 describe("client configuration", () => {
+  it("prefers an active LAN adapter over VPN and virtual adapters", () => {
+    const addresses = [
+      { name: "Dragon TUN-180950", ip: "172.19.0.1" },
+      { name: "vEthernet (WSL)", ip: "172.20.0.1" },
+      { name: "以太网", ip: "192.168.18.4" },
+    ];
+    expect(preferredConnectionHost(addresses, true)).toBe("192.168.18.4");
+    expect(preferredConnectionHost(addresses, false)).toBe("127.0.0.1");
+    expect(preferredConnectionHost([{ name: "Wi-Fi", ip: "10.0.0.8" }], true)).toBe("10.0.0.8");
+    expect(preferredConnectionHost(addresses.slice(0, 1), true)).toBe("172.19.0.1");
+    expect(preferredConnectionHost([], true)).toBe("127.0.0.1");
+  });
   it("includes the LAN endpoint and bearer header only in the copied version", () => {
     const output = JSON.parse(connectionConfig(config, "192.168.18.4", "json"));
     expect(output.mcpServers["windows-mcp"].url).toBe(

@@ -29,7 +29,7 @@ export interface Snapshot {
 export const native = isTauri();
 export const preview: Snapshot = {
   generation: 0,
-  config: { language: "zh-CN", port: 8001, lanEnabled: false, token: "" },
+  config: { language: "zh-CN", port: 8001, lanEnabled: true, token: "" },
   phase: "stopped",
   pid: null,
   startedAt: null,
@@ -54,6 +54,20 @@ export const api = {
   copy: (text: string) =>
     native ? writeText(text) : navigator.clipboard.writeText(text),
 };
+export function preferredConnectionHost(
+  addresses: Snapshot["addresses"],
+  lanEnabled: boolean,
+): string {
+  if (!lanEnabled) return "127.0.0.1";
+  // VPN and virtual adapters can appear first when addresses are sorted by IP.
+  const virtualAdapter =
+    /\b(tun|tap|vpn|virtual|virtualbox|vethernet|wsl|docker|vmware|hyper-v|wireguard|zerotier|tailscale|loopback)\b|虚拟|隧道/i;
+  return (
+    addresses.find((address) => !virtualAdapter.test(address.name))?.ip ??
+    addresses[0]?.ip ??
+    "127.0.0.1"
+  );
+}
 export function connectionConfig(
   config: Config,
   host: string,

@@ -94,6 +94,34 @@ async def test_gate_blocks_dynamic_tools_but_status_remains_available():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["user", "takeover_pending", "unavailable"])
+async def test_file_transfer_runs_without_desktop_ownership(state):
+    controller = FakeController()
+    controller.state = state
+    mcp = FastMCP("test")
+    mcp.add_middleware(ControlToolGate(controller, ControlNotifier(controller)))
+    tokens = []
+
+    @mcp.tool(name="FileTransfer")
+    def file_transfer():
+        tokens.append(current_token.get())
+        return "transferred"
+
+    @mcp.tool(name="DesktopAction")
+    def desktop_action():
+        raise AssertionError("Desktop input must remain blocked")
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("FileTransfer")
+        assert "transferred" in str(result.content)
+        blocked = await client.call_tool("DesktopAction", raise_on_error=False)
+        assert blocked.is_error
+    assert tokens == [None]
+    assert controller.calls == []
+    assert controller.state == state
+
+
+@pytest.mark.asyncio
 async def test_ledger_preemption_is_structured_and_releases_tool_lock():
     controller = FakeController()
     step_owner = ControlCoordinator()

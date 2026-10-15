@@ -96,6 +96,19 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), AppError> {
     Ok(())
 }
 
+pub fn rename_new(source: &Path, target: &Path) -> Result<(), AppError> {
+    let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+    let target: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
+    // No REPLACE_EXISTING: a late destination collision must never overwrite user data.
+    if unsafe { MoveFileExW(source.as_ptr(), target.as_ptr(), MOVEFILE_WRITE_THROUGH) } == 0 {
+        return Err(AppError::new(
+            "transfer_conflict",
+            std::io::Error::last_os_error().to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub struct Job(OwnedHandle);
 
 impl Job {

@@ -72,6 +72,7 @@ pub struct Manager {
     directory: PathBuf,
     resource_dir: PathBuf,
     repository: PathBuf,
+    transfer_bridge: Arc<Mutex<Option<(String, String)>>>,
 }
 fn now() -> u64 {
     SystemTime::now()
@@ -96,7 +97,11 @@ impl Manager {
             directory,
             resource_dir,
             repository: Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."),
+            transfer_bridge: Arc::new(Mutex::new(None)),
         })
+    }
+    pub fn set_transfer_bridge(&self, bridge: (String, String)) {
+        *self.transfer_bridge.lock().unwrap() = Some(bridge);
     }
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
@@ -163,6 +168,7 @@ impl Manager {
         let mut addresses: Vec<Address> = if_addrs::get_if_addrs()
             .unwrap_or_default()
             .into_iter()
+            .filter(|interface| interface.oper_status == if_addrs::IfOperStatus::Up)
             .filter_map(|interface| match interface.ip() {
                 std::net::IpAddr::V4(ip) if ip.is_private() && !ip.is_loopback() => Some(Address {
                     name: interface.name,
@@ -282,6 +288,15 @@ impl Manager {
                 .env("PYTHONIOENCODING", "utf-8")
                 .env("PYTHONUNBUFFERED", "1")
                 .env("ANONYMIZED_TELEMETRY", "false");
+            if let Some((url, token)) = &*self.transfer_bridge.lock().unwrap() {
+                command
+                    .env("WINDOWS_MCP_TRANSFER_CONTROL_URL", url)
+                    .env("WINDOWS_MCP_TRANSFER_CONTROL_TOKEN", token);
+            } else {
+                command
+                    .env_remove("WINDOWS_MCP_TRANSFER_CONTROL_URL")
+                    .env_remove("WINDOWS_MCP_TRANSFER_CONTROL_TOKEN");
+            }
             drop(reservation);
             let mut child = command
                 .spawn()

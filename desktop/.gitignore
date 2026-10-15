@@ -10,6 +10,9 @@ lerna-debug.log*
 node_modules
 /build-backend/
 /build-pyinstaller/
+/build-file-server/
+/src-tauri/file-server/*
+!/src-tauri/file-server/.gitkeep
 /test-results/
 /src-tauri/backend/*
 !/src-tauri/backend/.gitkeep

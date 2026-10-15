@@ -160,7 +160,7 @@ class ControlNotifier:
 
 
 class ControlToolGate(Middleware):
-    """All present and future MCP tools use the same ownership decision."""
+    """Gate desktop tools while allowing status and background file transfers."""
 
     def __init__(self, controller: Any, notifier: ControlNotifier) -> None:
         self.controller = controller
@@ -203,7 +203,8 @@ class ControlToolGate(Middleware):
     async def on_call_tool(self, context: MiddlewareContext, call_next: Callable) -> Any:
         self.notifier.remember(context)
         name = context.message.name
-        if name == "ControlStatus":
+        if name in {"ControlStatus", "FileTransfer"}:
+            # File transfers never manipulate desktop input or acquire its lease.
             return await call_next(context)
         if not self.controller.enabled:
             # Explicit opt-out only: a failed enabled controller still fails closed.
