@@ -2,11 +2,14 @@ mod config;
 mod manager;
 mod platform;
 mod protocol;
+mod services;
 mod transfer;
+mod tray;
 
 use manager::{Manager, Snapshot};
 use serde::Serialize;
-use tauri::{Manager as _, State};
+use services::Services;
+use tauri::{Manager as _, State, menu::ContextMenu};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AppError {
@@ -56,6 +59,8 @@ fn set_language(
             "Windows-MCP 管理器"
         });
     }
+    tray::language(&app, &snapshot.config.language)
+        .map_err(|e| AppError::new("process_failed", e.to_string()))?;
     Ok(snapshot)
 }
 #[tauri::command]
@@ -63,17 +68,46 @@ fn generate_token() -> Result<String, AppError> {
     config::generate_token()
 }
 #[tauri::command]
-async fn start_server(manager: State<'_, Manager>, generation: u64) -> Result<Snapshot, AppError> {
-    let manager = manager.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || manager.start_if_current(generation))
+async fn start_server(
+    services: State<'_, Services>,
+    generation: u64,
+) -> Result<Snapshot, AppError> {
+    let services = services.inner().clone();
+    let ticket = services.ticket();
+    tauri::async_runtime::spawn_blocking(move || services.start(generation, ticket, false))
         .await
         .map_err(|e| AppError::new("process_failed", e.to_string()))?
 }
 #[tauri::command]
-async fn stop_server(manager: State<'_, Manager>) -> Result<Snapshot, AppError> {
-    let manager = manager.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || manager.stop())
+async fn stop_server(services: State<'_, Services>) -> Result<Snapshot, AppError> {
+    let request = services.request_stop();
+    tauri::async_runtime::spawn_blocking(move || request.run(false))
         .await
+        .map_err(|e| AppError::new("process_failed", e.to_string()))
+}
+#[tauri::command]
+async fn start_services(
+    services: State<'_, Services>,
+    generation: u64,
+) -> Result<Snapshot, AppError> {
+    let services = services.inner().clone();
+    let ticket = services.ticket();
+    tauri::async_runtime::spawn_blocking(move || services.start(generation, ticket, true))
+        .await
+        .map_err(|e| AppError::new("process_failed", e.to_string()))?
+}
+#[tauri::command]
+async fn stop_services(services: State<'_, Services>) -> Result<Snapshot, AppError> {
+    let request = services.request_stop();
+    tauri::async_runtime::spawn_blocking(move || request.run(true))
+        .await
+        .map_err(|e| AppError::new("process_failed", e.to_string()))
+}
+#[tauri::command]
+async fn open_tray_menu(app: tauri::AppHandle, window: tauri::Window) -> Result<(), AppError> {
+    app.state::<tray::TrayMenu>()
+        .menu
+        .popup(window)
         .map_err(|e| AppError::new("process_failed", e.to_string()))
 }
 #[tauri::command]
@@ -91,22 +125,29 @@ fn transfer_snapshot(transfer: State<'_, transfer::TransferManager>) -> transfer
 #[tauri::command]
 async fn transfer_command(
     transfer: State<'_, transfer::TransferManager>,
+    services: State<'_, Services>,
     command: transfer::Command,
 ) -> Result<serde_json::Value, AppError> {
     let transfer = transfer.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || transfer.command(command, true))
-        .await
-        .map_err(|e| AppError::new("transfer_io", e.to_string()))?
+    let services = services.inner().clone();
+    let ticket = services.ticket();
+    tauri::async_runtime::spawn_blocking(move || {
+        if command.action == "start" {
+            serde_json::to_value(services.start_files(ticket)?)
+                .map_err(|e| AppError::new("transfer_io", e.to_string()))
+        } else {
+            transfer.command(command, true)
+        }
+    })
+    .await
+    .map_err(|e| AppError::new("transfer_io", e.to_string()))?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-            }
+            tray::show_main(app);
         }))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
@@ -123,9 +164,23 @@ pub fn run() {
                     window.set_title("Windows-MCP Manager")?;
                 }
             }
+            let selected_language = manager.snapshot().config.language;
+            app.manage(Services::new(manager.clone(), transfer.clone()));
             app.manage(manager);
             app.manage(transfer);
+            tray::init(app.handle(), &selected_language)?;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main"
+                    && window.app_handle().tray_by_id(tray::ID).is_some()
+                    && !window.state::<Services>().exiting()
+                    && window.hide().is_ok()
+                {
+                    api.prevent_close();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -134,6 +189,9 @@ pub fn run() {
             generate_token,
             start_server,
             stop_server,
+            start_services,
+            stop_services,
+            open_tray_menu,
             test_connection,
             transfer_snapshot,
             transfer_command
@@ -142,8 +200,7 @@ pub fn run() {
         .expect("Could not start Windows-MCP Manager");
     app.run(|app, event| {
         if matches!(event, tauri::RunEvent::Exit) {
-            app.state::<Manager>().stop();
-            app.state::<transfer::TransferManager>().shutdown();
+            app.state::<Services>().shutdown();
         }
     });
 }

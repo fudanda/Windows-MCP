@@ -6,6 +6,7 @@
 - 启动、停止后端，退出应用时回收本应用启动的整个进程树。
 - “一键启动 MCP 和文件传输”会保存 MCP 设置、确认 MCP 就绪，再按已保存的文件传输配置开启文件服务；已经运行的服务会保留，部分失败时可直接重试。
 - “一键停止 MCP 和文件传输”会停止两项服务并取消活动传输；启动过程中也可点击停止，等待启动请求结束后确保两项服务都已关闭。单项停止失败不会阻止另一项停止。
+- 系统托盘常驻：关闭窗口后服务继续运行，左键单击 / 双击图标恢复窗口；右键菜单可显示窗口、一键启动、一键停止或退出，菜单随界面语言切换。
 - 默认允许局域网连接，监听 `0.0.0.0`；连接地址优先选择已连接的以太网 / Wi-Fi 网卡 IP。手动关闭局域网后仅监听 `127.0.0.1`。
 - 可配置端口和 Token，生成新 Token，复制客户端 TOML / JSON 配置。
 - Token 使用当前 Windows 用户的 DPAPI 加密保存，通过环境变量传给后端，不出现在启动参数或明文配置文件中。
@@ -71,6 +72,14 @@ npm run build:desktop
 局域网使用可信网络中的 HTTP + Bearer Token；应用不会自动修改 Windows 防火墙。需要远程设备连接时，请放行所选端口。服务运行期间连接设置只读；停止后再修改，语言切换不受影响。
 
 配置位于 `%APPDATA%/com.fudanda.windowsmcp.manager/manager.json`。其中 Token 为 DPAPI 密文，仅能由原 Windows 用户解密。管理器使用独立、不含 Token 的 `backend.toml`，不覆盖 `~/.windows-mcp/config.toml`。匿名遥测在此管理器启动的后端中默认关闭；保留官方桌面控制保护机制。
+
+## 系统托盘
+
+- 关闭主窗口会隐藏到托盘，MCP 和文件传输继续运行；最小化仍使用 Windows 任务栏。
+- 左键单击 / 双击托盘图标、选择“显示主窗口”，或再次启动应用，都会恢复已有窗口。
+- 右键托盘图标可使用“一键启动 MCP 和文件传输”“一键停止 MCP 和文件传输”和“退出（停止所有服务）”。应用右上角的“托盘菜单”打开同一个菜单。
+- 托盘启停使用已保存的配置；窗口按钮和托盘菜单共用 Rust 服务管理，停止或退出会取消排队中的启动，避免隐藏窗口后又启动服务。
+- “退出”会回收本应用启动的 MCP、文件服务和活动传输。仅关闭窗口不会退出应用。菜单语言随简体中文 / English 设置切换。
 
 ## 局域网文件传输
 
@@ -161,6 +170,8 @@ MCP 测试客户端的单条 SSE 消息默认上限为 **1 GiB（1,073,741,824 �
 ## English
 
 Tauri 2 desktop manager for the official Windows-MCP backend. Defaults to Simplified Chinese with persistent English switching. Supports process start/stop, LAN binding, ports, DPAPI-encrypted bearer tokens, client configuration export, logs, and a real MCP connection check.
+
+Version 0.2.5 adds a native system tray. Closing the main window hides it and keeps services running. Left-click the tray icon or launch the app again to restore the existing window. Right-click the icon, or use the window's Tray menu button, to show the window, start/stop both services using saved settings, or quit and stop all owned services. Menu labels follow the interface language. Window and tray actions share the Rust lifecycle controller so stopping also cancels queued starts.
 
 Version 0.2.1 adds a standalone Codex transfer command. Call MCP `FileTransfer` with `start` and `connection`, fetch `client.path` from the file-service origin, verify the script against `client.sha256`, and run it locally with `uv run --script windows-mcp-transfer.py --json upload <LOCAL_PATH>` or `download <REMOTE_PATH> --to <LOCAL_DESTINATION>`. Set `WINDOWS_MCP_TRANSFER_URL` and `WINDOWS_MCP_TRANSFER_TOKEN` in the command process environment, or use `--token-stdin`. HTTPX streams the bytes, Rich displays terminal progress, and JSON Lines supports agents. Both directions verify SHA-256 and preserve empty files/directories. The client does not import or require Windows-MCP or Tauri. Only the receiving computer needs the desktop manager; a browser is optional. The MCP `send` action continues to read paths on the server, never client-local paths.
 

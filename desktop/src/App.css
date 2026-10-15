@@ -124,6 +124,11 @@ nav {
   gap: 7px;
   color: #737e90;
 }
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
 .language-control select {
   width: auto;
   border: 0;

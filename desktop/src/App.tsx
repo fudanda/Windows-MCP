@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import {
   Activity,
   ArrowUpDown,
@@ -23,6 +24,7 @@ import {
   ShieldCheck,
   Square,
   Terminal,
+  PanelBottom,
   Wifi,
   Zap,
 } from "lucide-react";
@@ -86,6 +88,25 @@ function App() {
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    if (!native) return;
+    let disposed = false;
+    let stopListening: (() => void) | undefined;
+    void listen("tray-error", (event) => {
+      if (!disposed) setError(event.payload);
+    })
+      .then((unlisten) => {
+        if (disposed) unlisten();
+        else stopListening = unlisten;
+      })
+      .catch((error) => {
+        if (!disposed) setError(error);
+      });
+    return () => {
+      disposed = true;
+      stopListening?.();
+    };
+  }, []);
   useEffect(() => {
     if (!native || !loaded) return;
     let disposed = false;
@@ -283,7 +304,7 @@ function App() {
             <span>CursorTouch / Windows-MCP</span>
           </div>
           <p>{tr("runtime")}</p>
-          <span className="version-label">Tauri 2 · v0.2.4</span>
+          <span className="version-label">Tauri 2 · v0.2.5</span>
         </div>
       </aside>
       <div className="main-shell">
@@ -292,19 +313,30 @@ function App() {
             Windows-MCP <ChevronRight size={14} />
             <span>{tr(section)}</span>
           </div>
-          <label className="language-control">
-            <Languages size={16} />
-            <select
-              aria-label={tr("language")}
-              value={language}
-              onChange={(event) =>
-                void changeLanguage(event.target.value as Language)
-              }
-            >
-              <option value="zh-CN">简体中文</option>
-              <option value="en">English</option>
-            </select>
-          </label>
+          <div className="topbar-actions">
+            {native && (
+              <button
+                className="text-button"
+                onClick={() => void action("trayMenu", api.trayMenu)}
+              >
+                <PanelBottom size={16} />
+                {tr("trayMenu")}
+              </button>
+            )}
+            <label className="language-control">
+              <Languages size={16} />
+              <select
+                aria-label={tr("language")}
+                value={language}
+                onChange={(event) =>
+                  void changeLanguage(event.target.value as Language)
+                }
+              >
+                <option value="zh-CN">简体中文</option>
+                <option value="en">English</option>
+              </select>
+            </label>
+          </div>
         </header>
         <main>
           <div className="page-heading">
@@ -397,7 +429,7 @@ function App() {
                         }
                         onClick={() =>
                           void action("startAll", async (signal) => {
-                            await startServices(
+                            const started = await startServices(
                               snapshot,
                               { ...draft, language },
                               (data) => {
@@ -406,7 +438,7 @@ function App() {
                               },
                               signal,
                             );
-                            setNotice("servicesStarted");
+                            if (started) setNotice("servicesStarted");
                           })
                         }
                       >
@@ -426,7 +458,7 @@ function App() {
                         }
                         onClick={() =>
                           void action("stopAll", async () => {
-                            await stopServices(language, setSnapshot, startup.current);
+                            await stopServices(setSnapshot, startup.current);
                             setNotice("servicesStopped");
                           })
                         }

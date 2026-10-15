@@ -1,6 +1,6 @@
 [package]
 name = "windows-mcp-manager"
-version = "0.2.4"
+version = "0.2.5"
 description = "Desktop manager for the official Windows-MCP server"
 authors = ["fudanda"]
 edition = "2024"
@@ -18,7 +18,7 @@ crate-type = ["rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-clipboard-manager = "2"
 serde = { version = "1", features = ["derive"] }

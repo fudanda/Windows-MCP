@@ -50,6 +50,9 @@ export const api = {
   start: (generation: number) =>
     invoke<Snapshot>("start_server", { generation }),
   stop: () => invoke<Snapshot>("stop_server"),
+  startAll: (generation: number) => invoke<Snapshot>("start_services", { generation }),
+  stopAll: () => invoke<Snapshot>("stop_services"),
+  trayMenu: () => invoke<void>("open_tray_menu"),
   test: () => invoke<Probe>("test_connection"),
   copy: (text: string) =>
     native ? writeText(text) : navigator.clipboard.writeText(text),
