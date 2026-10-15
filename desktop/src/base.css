@@ -1,0 +1,53 @@
+:root {
+  font-family: Inter, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  color: #26374e;
+  background: #fbfcfe;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-width: 600px;
+}
+button,
+input,
+select {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #719bec;
+  outline-offset: 3px;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+pre,
+code {
+  font-family: "Cascadia Code", Consolas, monospace;
+}
+button,
+select {
+  -webkit-user-select: none;
+  user-select: none;
+}
+svg {
+  vertical-align: middle;
+}
+a {
+  color: inherit;
+}
