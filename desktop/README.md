@@ -67,11 +67,17 @@ npm run build:desktop
 
 ```powershell
 npm test
+# 先在管理器启动服务，实际调用 DisplayInventory 和 Screenshot
+npm run test:mcp
 npm run build
 cargo test --manifest-path src-tauri/Cargo.toml --lib
 # 显式运行真实后端的启动、认证、工具发现及停止集成验证
 cargo test --manifest-path src-tauri/Cargo.toml --lib official_backend_lifecycle_and_authentication -- --ignored
 ```
+
+MCP 测试客户端的单条 SSE 消息默认上限为 **1 GiB（1,073,741,824 字节）**，截图及报告保存在 `desktop/test-results/`。可用 `npm run test:mcp -- --max-sse-event-size <字节数>` 覆盖，或用 `--output-dir <目录>` 指定输出位置。Token 从管理器配置中通过当前用户的 DPAPI 解密读取，不输出到终端。
+
+这是项目测试客户端的接收上限。服务端没有 SDK 的 1 MiB 接收限制，也不能替第三方 MCP 客户端调整各自的上限。
 
 ## English
 

@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 /build-backend/
 /build-pyinstaller/
+/test-results/
 /src-tauri/backend/*
 !/src-tauri/backend/.gitkeep
 /.playwright-cli/

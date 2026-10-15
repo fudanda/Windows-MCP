@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
+    "test:mcp": "uv run --project .. --locked --python 3.14 python scripts/test-mcp.py",
     "build:backend": "pwsh -NoProfile -File scripts/build-backend.ps1",
     "build:desktop": "npm run build:backend && tauri build"
   },
