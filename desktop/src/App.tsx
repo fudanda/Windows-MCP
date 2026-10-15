@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
+  ArrowUpDown,
   ArrowUpRight,
   Check,
   CheckCircle2,
@@ -23,6 +24,7 @@ import {
   Square,
   Terminal,
   Wifi,
+  Zap,
 } from "lucide-react";
 import {
   api,
@@ -30,12 +32,15 @@ import {
   connectionConfig,
   native,
   preview,
+  preferredConnectionHost,
   validConfig,
   type Config,
   type Snapshot,
 } from "./api";
 import { errorMessage, translate, type Language } from "./i18n";
 import "./App.css";
+import TransferPanel from "./TransferPanel";
+import { startServices, stopServices, type ServiceStartup } from "./services";
 
 function App() {
   const [snapshot, updateSnapshot] = useState<Snapshot>(preview);
@@ -47,18 +52,20 @@ function App() {
   const [draft, setDraft] = useState<Config>(preview.config);
   const [language, setLanguage] = useState<Language>("zh-CN");
   const [loaded, setLoaded] = useState(false);
-  const [section, setSection] = useState<"overview" | "connection" | "logs">(
-    "overview",
-  );
+  const [section, setSection] = useState<
+    "overview" | "connection" | "logs" | "transfer"
+  >("overview");
   const [busy, setBusy] = useState("");
   const inFlight = useRef(new Set<string>());
+  const startup = useRef<ServiceStartup | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [notice, setNotice] = useState<"" | "saved" | "copied" | "connected">(
-    "",
-  );
+  const [notice, setNotice] = useState<
+    "" | "saved" | "copied" | "connected" | "servicesStarted" | "servicesStopped"
+  >("");
   const [showToken, setShowToken] = useState(false);
   const [format, setFormat] = useState<"toml" | "json">("toml");
   const [host, setHost] = useState("127.0.0.1");
+  const defaultHost = preferredConnectionHost(snapshot.addresses, draft.lanEnabled);
   const tr = (key: Parameters<typeof translate>[1]) => translate(language, key);
   const active = ["running", "starting", "stopping"].includes(snapshot.phase);
   const dirty = connectionChanged(draft, snapshot.config);
@@ -68,11 +75,7 @@ function App() {
       const data = await api.snapshot();
       setSnapshot(data);
       setDraft(data.config);
-      setHost(
-        data.config.lanEnabled
-          ? (data.addresses[0]?.ip ?? "127.0.0.1")
-          : "127.0.0.1",
-      );
+      setHost(preferredConnectionHost(data.addresses, data.config.lanEnabled));
       setLanguage(data.config.language);
       setLoaded(true);
       setError(null);
@@ -106,24 +109,40 @@ function App() {
     document.title = translate(language, "app");
   }, [language]);
   useEffect(() => {
-    if (!draft.lanEnabled) setHost("127.0.0.1");
-  }, [draft.lanEnabled]);
+    setHost(defaultHost);
+  }, [defaultHost]);
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(""), 3000);
     return () => clearTimeout(timer);
   }, [notice]);
-  async function action(name: string, callback: () => Promise<void>) {
-    if (inFlight.current.has(name)) return;
+  async function action(
+    name: string,
+    callback: (signal?: AbortSignal) => Promise<void>,
+  ) {
+    const stopping = name === "stop" || name === "stopAll";
+    if (
+      inFlight.current.has(name) ||
+      inFlight.current.has("stop") ||
+      inFlight.current.has("stopAll") ||
+      (!stopping && inFlight.current.size > 0)
+    ) return;
     inFlight.current.add(name);
     setBusy(name);
     setError(null);
     setNotice("");
+    const controller = ["start", "startAll"].includes(name)
+      ? new AbortController()
+      : null;
     try {
-      await callback();
+      const promise = callback(controller?.signal);
+      if (controller) startup.current = { controller, promise };
+      await promise;
     } catch (error) {
-      setError(error);
+      if (!controller?.signal.aborted) setError(error);
     } finally {
+      if (controller && startup.current?.controller === controller)
+        startup.current = null;
       inFlight.current.delete(name);
       const remaining = Array.from(inFlight.current);
       setBusy(remaining[remaining.length - 1] ?? "");
@@ -152,6 +171,7 @@ function App() {
   const nav = [
     { id: "overview", icon: Settings2 },
     { id: "connection", icon: Network },
+    { id: "transfer", icon: ArrowUpDown },
     { id: "logs", icon: Terminal },
   ] as const;
   const connection = (
@@ -263,7 +283,7 @@ function App() {
             <span>CursorTouch / Windows-MCP</span>
           </div>
           <p>{tr("runtime")}</p>
-          <span className="version-label">Tauri 2 · v0.1.0</span>
+          <span className="version-label">Tauri 2 · v0.2.4</span>
         </div>
       </aside>
       <div className="main-shell">
@@ -339,6 +359,12 @@ function App() {
             </div>
           ) : (
             <>
+              {section === "transfer" && (
+                <TransferPanel
+                  language={language}
+                  addresses={snapshot.addresses}
+                />
+              )}
               {section === "overview" && (
                 <>
                   <section
@@ -365,12 +391,64 @@ function App() {
                         disabled={
                           !native ||
                           !snapshot.backendAvailable ||
+                          ["starting", "stopping"].includes(snapshot.phase) ||
+                          Boolean(busy) ||
+                          !valid
+                        }
+                        onClick={() =>
+                          void action("startAll", async (signal) => {
+                            await startServices(
+                              snapshot,
+                              { ...draft, language },
+                              (data) => {
+                                setSnapshot(data);
+                                setDraft(data.config);
+                              },
+                              signal,
+                            );
+                            setNotice("servicesStarted");
+                          })
+                        }
+                      >
+                        {busy === "startAll" ? (
+                          <LoaderCircle size={17} className="spin" />
+                        ) : (
+                          <Zap size={17} />
+                        )}
+                        {busy === "startAll" ? tr("startingAll") : tr("startAll")}
+                      </button>
+                      <button
+                        className="button secondary"
+                        title={tr("stopAllHint")}
+                        disabled={
+                          !native ||
+                          (Boolean(busy) && !["start", "startAll"].includes(busy))
+                        }
+                        onClick={() =>
+                          void action("stopAll", async () => {
+                            await stopServices(language, setSnapshot, startup.current);
+                            setNotice("servicesStopped");
+                          })
+                        }
+                      >
+                        {busy === "stopAll" ? (
+                          <LoaderCircle size={17} className="spin" />
+                        ) : (
+                          <Square size={14} />
+                        )}
+                        {busy === "stopAll" ? tr("stoppingAll") : tr("stopAll")}
+                      </button>
+                      <button
+                        className="button secondary"
+                        disabled={
+                          !native ||
+                          !snapshot.backendAvailable ||
                           active ||
                           Boolean(busy) ||
                           !valid
                         }
                         onClick={() =>
-                          void action("start", async () => {
+                          void action("start", async (signal) => {
                             let generation = snapshot.generation;
                             if (dirty) {
                               const saved = await api.save({
@@ -380,6 +458,7 @@ function App() {
                               setSnapshot(saved);
                               generation = saved.generation;
                             }
+                            signal?.throwIfAborted();
                             setSnapshot(await api.start(generation));
                           })
                         }
@@ -396,7 +475,8 @@ function App() {
                         disabled={
                           !native ||
                           !["starting", "running"].includes(snapshot.phase) ||
-                          busy === "stop"
+                          busy === "stop" ||
+                          busy === "stopAll"
                         }
                         onClick={() =>
                           void action("stop", async () => {
@@ -508,11 +588,6 @@ function App() {
                             onChange={(event) => {
                               const enabled = event.target.checked;
                               setDraft({ ...draft, lanEnabled: enabled });
-                              setHost(
-                                enabled
-                                  ? (snapshot.addresses[0]?.ip ?? "127.0.0.1")
-                                  : "127.0.0.1",
-                              );
                             }}
                           />
                         </div>

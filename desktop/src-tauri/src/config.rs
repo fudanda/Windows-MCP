@@ -28,7 +28,7 @@ impl Config {
         Ok(Self {
             language: "zh-CN".into(),
             port: 8001,
-            lan_enabled: false,
+            lan_enabled: true,
             token: generate_token()?,
         })
     }
@@ -113,10 +113,11 @@ mod tests {
     fn defaults_and_validation() {
         let mut config = Config::new().unwrap();
         assert_eq!(config.language, "zh-CN");
-        assert_eq!(config.host(), "127.0.0.1");
-        assert!(config.validate().is_ok());
-        config.lan_enabled = true;
+        assert!(config.lan_enabled);
         assert_eq!(config.host(), "0.0.0.0");
+        assert!(config.validate().is_ok());
+        config.lan_enabled = false;
+        assert_eq!(config.host(), "127.0.0.1");
         config.token = "a secret with spaces".into();
         assert_eq!(config.validate().unwrap_err().code, "invalid_token");
         config.token = "x".repeat(32);
@@ -132,7 +133,7 @@ mod tests {
         let disk = fs::read_to_string(dir.join("manager.json")).unwrap();
         assert!(!disk.contains(&config.token));
         config.language = "en".into();
-        config.lan_enabled = true;
+        config.lan_enabled = false;
         save(&dir, &config).unwrap();
         assert_eq!(load(&dir).unwrap(), config);
         fs::remove_file(dir.join("manager.json")).unwrap();

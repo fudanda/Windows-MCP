@@ -5,6 +5,7 @@ const zh = {
   overview: "服务管理",
   connection: "客户端连接",
   logs: "运行日志",
+  transfer: "文件传输",
   official: "官方 Windows-MCP 后端",
   local: "仅本机",
   lan: "局域网",
@@ -16,6 +17,13 @@ const zh = {
   stopping: "正在停止",
   error: "服务异常",
   start: "启动服务",
+  startAll: "一键启动 MCP 和文件传输",
+  startingAll: "正在启动两项服务…",
+  servicesStarted: "MCP 和文件传输服务均已启动",
+  stopAll: "一键停止 MCP 和文件传输",
+  stoppingAll: "正在停止两项服务…",
+  servicesStopped: "MCP 和文件传输服务均已停止",
+  stopAllHint: "同时停止两项服务，并取消正在进行的传输任务。",
   saveStart: "保存并启动",
   stop: "停止服务",
   test: "检测连接",
@@ -75,6 +83,7 @@ const en: Record<Key, string> = {
   overview: "Service",
   connection: "Client connection",
   logs: "Runtime logs",
+  transfer: "File transfer",
   official: "Official Windows-MCP backend",
   local: "Local only",
   lan: "Local network",
@@ -86,6 +95,13 @@ const en: Record<Key, string> = {
   stopping: "Stopping",
   error: "Service error",
   start: "Start service",
+  startAll: "Start MCP and file transfer",
+  startingAll: "Starting both services…",
+  servicesStarted: "MCP and file transfer are running",
+  stopAll: "Stop MCP and file transfer",
+  stoppingAll: "Stopping both services…",
+  servicesStopped: "MCP and file transfer are stopped",
+  stopAllHint: "Stop both services and cancel active transfers.",
   saveStart: "Save and start",
   stop: "Stop service",
   test: "Test connection",
@@ -146,6 +162,14 @@ export function translate(language: Language, key: Key): string {
   return (language === "en" ? en : zh)[key];
 }
 const errors: Record<string, [string, string]> = {
+  services_stop_failed: [
+    "部分服务未能停止，请查看详情并重试。",
+    "Some services could not stop. Check the details and retry.",
+  ],
+  transfer_start_failed: [
+    "MCP 已运行，但文件传输启动失败。可再次点击一键启动重试。",
+    "MCP is running, but file transfer could not start. Retry with the combined start button.",
+  ],
   invalid_port: [
     "请输入 1–65535 之间的有效端口。",
     "Enter a port between 1 and 65535.",

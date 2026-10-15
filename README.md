@@ -903,3 +903,5 @@ Made with ❤️ by [CursorTouch](https://github.com/CursorTouch)
 ## Tauri 2 desktop manager (this fork)
 
 See [desktop/README.md](desktop/README.md) for the Windows desktop manager: Simplified Chinese by default, English switching, service start/stop, LAN and port settings, encrypted bearer-token storage, and client configuration export.
+
+For Codex-driven file and folder uploads/downloads without a browser or a local desktop client, use the [standalone transfer command](scripts/windows-mcp-transfer.py). The remote manager exposes the script path and SHA-256 through MCP `FileTransfer` → `connection`. Usage, progress output, authentication and integrity checks are documented in [desktop/README.md](desktop/README.md).
