@@ -16,6 +16,8 @@
 - 传输使用独立 Token，Uppy 显示进度，收到的文件经过流式 SHA-256 和 Dufs 落盘 SHA-256 双重校验后发布。
 - `FileTransfer` MCP 工具与桌面端共用配置、设备和传输任务。
 
+其他项目可安装 [windows-mcp Skill](../skills/windows-mcp/SKILL.md)，复用截图、窗口操作及无需浏览器的文件传输。用户级安装、连接配置和命令示例见[跨项目接入指南](../docs/agent-integration.md)。
+
 ## 官方参数核对
 
 实现以本仓库的 `src/windows_mcp/__main__.py`（当前后端版本 0.8.8）和实际 `serve --help` 为准：

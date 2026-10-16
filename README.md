@@ -26,6 +26,13 @@
 
 mcp-name: io.github.CursorTouch/Windows-MCP
 
+## Desktop manager and reusable Skill
+
+This fork includes a [Tauri desktop manager](desktop/README.md) and a reusable
+[Windows-MCP Skill](skills/windows-mcp/SKILL.md) for desktop operations and verified
+LAN file/folder transfers. See the [跨项目接入指南](docs/agent-integration.md) for
+installation, MCP configuration, and client commands that run from any project.
+
 ## Updates
 - Windows-MCP reached `2M+ Users` in [Claude Desktop Extensiosn](https://claude.ai/directory). 
 - Try out [🪟Windows-Use](https://pypi.org/project/windows-use/), an agent built using Windows-MCP.
