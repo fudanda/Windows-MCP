@@ -1,6 +1,7 @@
 """Regression checks for the accepted AI-control glow and notice."""
 
 import pytest
+from pathlib import Path
 
 from windows_mcp.desktop import control_overlay, control_overlay_art, flash_overlay
 
@@ -15,11 +16,29 @@ def _alpha_at(bgra: bytes, width: int, x: int, y: int) -> int:
     return bgra[(y * width + x) * 4 + 3]
 
 
-def test_notice_uses_clear_english_and_transparent_corners():
-    assert control_overlay_art._NOTICE_TITLE == "AI is controlling this computer"
-    assert control_overlay_art._NOTICE_HINT == "Press Ctrl + Alt + Shift + Backspace to take over"
+def test_chinese_font_has_real_glyphs_instead_of_missing_character_boxes():
+    font_dir = Path(control_overlay_art.os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
+    font = control_overlay_art._notice_font(font_dir, 24, language="zh-CN", bold=False)
+    missing = bytes(font.getmask("\u0378"))
+    for character in "正在控制此电脑接管":
+        assert bytes(font.getmask(character)) != missing
+
+
+@pytest.mark.parametrize(
+    "language,title,hint",
+    [
+        ("zh-CN", "AI 正在控制此电脑", "按 Ctrl + Alt + Shift + Backspace 接管电脑"),
+        (
+            "en",
+            "AI is controlling this computer",
+            "Press Ctrl + Alt + Shift + Backspace to take over",
+        ),
+    ],
+)
+def test_notice_is_localized_with_transparent_corners(language, title, hint):
+    assert control_overlay_art._NOTICE_TEXT[language] == (title, hint)
     assert control_overlay_art._NOTICE_SHORTCUT == "Ctrl + Alt + Shift + Backspace"
-    notice = control_overlay_art._notice_bitmap(1920)
+    notice = control_overlay_art._notice_bitmap(1920, language)
     assert notice is not None
     width, height, bgra = notice
     assert 540 <= width < 1920 and height < 120  # No third line remains.
@@ -50,7 +69,7 @@ def test_notice_uses_clear_english_and_transparent_corners():
     assert any(
         bgra[offset : offset + 4] == b"\x00\x00\x00\xff" for offset in range(0, len(bgra), 4)
     )
-    narrow = control_overlay_art._notice_bitmap(300)
+    narrow = control_overlay_art._notice_bitmap(300, language)
     assert narrow is not None and narrow[0] <= 268
 
 

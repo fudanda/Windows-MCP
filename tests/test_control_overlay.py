@@ -58,7 +58,9 @@ def test_indicator_lifecycle_and_no_restore_after_takeover(monkeypatch):
 
     monkeypatch.setattr(control_overlay, "_monitor_rects", lambda: ((0, 0, 800, 600),))
     monkeypatch.setattr(
-        control_overlay, "_build_layers", lambda rects, pending: ([FakeLayer()], FakeLayer())
+        control_overlay,
+        "_build_layers",
+        lambda rects, pending, language: ([FakeLayer()], FakeLayer()),
     )
     monkeypatch.setattr(control_overlay._user32, "GetCursorPos", lambda ptr: True)
     monkeypatch.setattr(flash_overlay, "_pump_messages", lambda hwnd: None)
@@ -87,6 +89,60 @@ def test_failed_indicator_reports_unhealthy(monkeypatch):
 
     monkeypatch.setattr(control_overlay, "_instance", FailedIndicator())
     assert control_overlay.is_healthy() is False
+
+
+def test_language_switch_rebuilds_notice_without_changing_lease_or_capture(monkeypatch, tmp_path):
+    config = tmp_path / "manager.json"
+    config.write_text('{"language":"zh-CN"}', encoding="utf-8")
+    monkeypatch.setenv("WINDOWS_MCP_MANAGER_CONFIG", str(config))
+    built = []
+    shown = []
+
+    class FakeLayer:
+        hwnd = 1
+        breathes = True
+
+        def __init__(self, language):
+            self.language = language
+
+        def set_opacity(self, opacity):
+            pass
+
+        def show(self):
+            shown.append(self.language)
+
+        def hide(self):
+            pass
+
+        def move(self, x, y):
+            pass
+
+        def close(self):
+            pass
+
+    def build(rects, pending, language):
+        built.append(language)
+        return [FakeLayer(language)], FakeLayer(language)
+
+    monkeypatch.setattr(control_overlay, "_build_layers", build)
+    monkeypatch.setattr(control_overlay, "_monitor_rects", lambda: ((0, 0, 1920, 1080),))
+    monkeypatch.setattr(control_overlay._user32, "GetCursorPos", lambda ptr: True)
+    monkeypatch.setattr(flash_overlay, "_pump_messages", lambda hwnd: None)
+    control_overlay.start()
+    control_overlay.set_active(True, generation=7)
+    assert shown == ["zh-CN", "zh-CN"]
+    with control_overlay.suspend_for_capture():
+        config.write_text('{"language":"en"}', encoding="utf-8")
+        deadline = time.monotonic() + 2
+        while "en" not in built and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert built == ["zh-CN", "en"]
+        assert shown == ["zh-CN", "zh-CN"]
+        indicator = control_overlay._instance
+        assert indicator.active and not indicator.pending
+        assert indicator.generation == 7
+        assert control_overlay.is_healthy()
+    assert shown == ["zh-CN", "zh-CN", "en", "en"]
 
 
 def test_alive_but_stalled_indicator_reports_unhealthy(monkeypatch):

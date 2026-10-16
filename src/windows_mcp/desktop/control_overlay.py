@@ -12,6 +12,7 @@ import time
 from ctypes import wintypes
 
 from windows_mcp.desktop import flash_overlay
+from windows_mcp.desktop.control_locale import NoticeLanguage
 from windows_mcp.desktop.control_overlay_art import (
     _BORDER,
     _CURSOR_SIZE,
@@ -135,7 +136,7 @@ def _monitor_rects() -> tuple[tuple[int, int, int, int], ...]:
 
 
 def _build_layers(
-    rects: tuple[tuple[int, int, int, int], ...], pending: bool
+    rects: tuple[tuple[int, int, int, int], ...], pending: bool, language: str = "zh-CN"
 ) -> tuple[list[_Layer], _Layer]:
     if not rects:
         raise RuntimeError("no display available for AI control indicator")
@@ -162,7 +163,7 @@ def _build_layers(
                     layers.append(
                         _Layer(x, y, w, h, _edge_bitmap(w, h, side, color), f"{index}_{side}")
                     )
-            notice = _notice_bitmap(width)
+            notice = _notice_bitmap(width, language)
             if notice is not None:
                 notice_width, notice_height, bitmap = notice
                 # Narrow monitors retain the aura without letting its window spill onto a neighbor.
@@ -301,6 +302,8 @@ class _Indicator:
         ring: _Layer | None = None
         rects: tuple[tuple[int, int, int, int], ...] = ()
         mode: bool | None = None
+        notice_language = NoticeLanguage()
+        language: str | None = None
         visible = False
         was_active = False
         breath_started = 0.0
@@ -318,15 +321,22 @@ class _Indicator:
                     if not was_active:
                         breath_started = time.monotonic()
                     current_rects = _monitor_rects()
-                    if ring is None or current_rects != rects or mode != pending:
+                    current_language = notice_language.current()
+                    if (
+                        ring is None
+                        or current_rects != rects
+                        or mode != pending
+                        or language != current_language
+                    ):
                         for layer in reversed(layers):
                             layer.close()
                         layers = []
                         if ring:
                             ring.close()
                             ring = None
-                        layers, ring = _build_layers(current_rects, pending)
+                        layers, ring = _build_layers(current_rects, pending, current_language)
                         rects, mode = current_rects, pending
+                        language = current_language
                         visible = False
                     if suspended:
                         if visible:

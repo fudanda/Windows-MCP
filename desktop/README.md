@@ -65,6 +65,10 @@ npm run build:desktop
 
 ## 使用
 
+0.2.10 将屏幕顶部的 AI 控制提示默认改为简体中文：“AI 正在控制此电脑”“按 Ctrl + Alt + Shift + Backspace 接管电脑”。提示使用中文字体，并跟随管理器的简体中文 / English 选择；服务运行期间切换语言也会更新提示，无需重启 MCP。接管快捷键、控制权保护和截图时隐藏提示的机制保持原有行为。
+
+独立启动后端时，可用 `WINDOWS_MCP_LANGUAGE=zh-CN` / `en` 选择提示语言，默认简体中文。管理器通过启动环境及保存的 `manager.json` 同步语言；文件暂时无法读取时保留上一次有效语言。
+
 0.2.9 修复区域截图因 DXCam 动态加载 `cv2` 失败而无法截图的问题：可选依赖缺失时自动回退到 Pillow，保留所请求的区域，不需要额外安装 OpenCV。截图失败会返回 MCP 错误状态。窗口切换与按名称调整窗口改为每次读取实时窗口列表，优先匹配完整标题，再匹配唯一的部分标题；目标不存在或存在歧义时返回错误，不再模糊选择其他应用。
 
 0.2.8 使用统一的 Windows-MCP 图标，覆盖安装包、卸载程序、应用窗口、桌面快捷方式、系统托盘及管理页面。设计源文件与生成提示词保存在 `artwork/`；平台图标由 Tauri CLI 导出。
@@ -180,6 +184,8 @@ MCP 测试客户端的单条 SSE 消息默认上限为 **1 GiB（1,073,741,824 �
 ## English
 
 Tauri 2 desktop manager for the official Windows-MCP backend. Defaults to Simplified Chinese with persistent English switching. Supports process start/stop, LAN binding, ports, DPAPI-encrypted bearer tokens, client configuration export, logs, and a real MCP connection check.
+
+Version 0.2.10 localizes the on-screen AI-control notice, defaulting to Simplified Chinese with CJK fonts. It follows the manager's saved Chinese/English setting while the server is running. Standalone servers can set `WINDOWS_MCP_LANGUAGE=zh-CN` or `en`. The takeover shortcut and screenshot exclusion retain their existing behavior.
 
 Version 0.2.9 falls back to Pillow when an optional capture dependency such as OpenCV is missing, preserving the requested region. Capture failures return MCP errors. Window switching and named resizing use live window lists with exact-title matching followed by unique substring matching; missing and ambiguous titles fail without activating another app.
 

@@ -13,9 +13,11 @@ _CURSOR_SIZE = 88
 _NOTICE_GLOW_PAD = 32
 _BREATH_PERIOD_SECONDS = 3.0
 _BREATH_MIN_ALPHA = 140
-_NOTICE_TITLE = "AI is controlling this computer"
 _NOTICE_SHORTCUT = "Ctrl + Alt + Shift + Backspace"
-_NOTICE_HINT = f"Press {_NOTICE_SHORTCUT} to take over"
+_NOTICE_TEXT = {
+    "zh-CN": ("AI 正在控制此电脑", f"按 {_NOTICE_SHORTCUT} 接管电脑"),
+    "en": ("AI is controlling this computer", f"Press {_NOTICE_SHORTCUT} to take over"),
+}
 
 
 def _breath_opacity(elapsed: float) -> int:
@@ -99,24 +101,40 @@ def _notice_panel_mask(width: int, height: int) -> Image.Image:
     return ImageChops.multiply(_notice_shape_mask(width, height), fade_mask)
 
 
-def _notice_bitmap(screen_width: int) -> tuple[int, int, bytes] | None:
+def _notice_font(
+    font_dir: Path, size: int, *, language: str, bold: bool
+) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """Prefer CJK fonts for Chinese: Segoe UI alone renders missing-glyph boxes."""
+    cjk = (
+        ("msyhbd.ttc", "msyh.ttc", "simhei.ttf", "simsun.ttc", "msjh.ttc")
+        if bold
+        else ("msyh.ttc", "simhei.ttf", "simsun.ttc", "msjh.ttc")
+    )
+    latin = ("seguisb.ttf", "segoeui.ttf") if bold else ("segoeui.ttf",)
+    for name in cjk + latin if language != "en" else latin + cjk:
+        try:
+            return ImageFont.truetype(str(font_dir / name), size)
+        except OSError:
+            continue
+    return ImageFont.load_default(size=size)
+
+
+def _notice_bitmap(screen_width: int, language: str = "zh-CN") -> tuple[int, int, bytes] | None:
     """Render a centered two-line prompt below the upper glow."""
     available_width = screen_width - 32
     if available_width < 200:
         return None
     horizontal_padding = 32 if screen_width >= 640 else 20
     font_dir = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
+    title, hint = _NOTICE_TEXT.get(language, _NOTICE_TEXT["zh-CN"])
     # Prefer presentation-sized text, then shrink only when a monitor is narrow.
     for hint_size in range(24, 7, -1):
-        try:
-            title_font = ImageFont.truetype(str(font_dir / "seguisb.ttf"), hint_size + 8)
-            hint_font = ImageFont.truetype(str(font_dir / "segoeui.ttf"), hint_size)
-        except OSError:
-            title_font = hint_font = ImageFont.load_default()
+        title_font = _notice_font(font_dir, hint_size + 8, language=language, bold=True)
+        hint_font = _notice_font(font_dir, hint_size, language=language, bold=False)
         measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
-        title_box = measure.textbbox((0, 0), _NOTICE_TITLE, font=title_font)
-        hint_box = measure.textbbox((0, 0), _NOTICE_HINT, font=hint_font)
-        hint_prefix, _, hint_suffix = _NOTICE_HINT.partition(_NOTICE_SHORTCUT)
+        title_box = measure.textbbox((0, 0), title, font=title_font)
+        hint_box = measure.textbbox((0, 0), hint, font=hint_font)
+        hint_prefix, _, hint_suffix = hint.partition(_NOTICE_SHORTCUT)
         prefix_width = math.ceil(measure.textlength(hint_prefix, font=hint_font))
         shortcut_width = math.ceil(measure.textlength(_NOTICE_SHORTCUT, font=hint_font))
         suffix_width = math.ceil(measure.textlength(hint_suffix, font=hint_font))
@@ -140,7 +158,7 @@ def _notice_bitmap(screen_width: int) -> tuple[int, int, bytes] | None:
     hint_y = 28 + title_height - hint_box[1]
     draw.text(
         ((width - title_width) // 2 - title_box[0], title_y),
-        _NOTICE_TITLE,
+        title,
         font=title_font,
         fill=(248, 251, 255, 255),
     )

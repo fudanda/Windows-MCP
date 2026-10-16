@@ -285,6 +285,11 @@ impl Manager {
             // Never put the bearer token on the command line or in the TOML file.
             command
                 .env("WINDOWS_MCP_AUTH_KEY", &config.token)
+                .env("WINDOWS_MCP_LANGUAGE", &config.language)
+                .env(
+                    "WINDOWS_MCP_MANAGER_CONFIG",
+                    self.directory.join("manager.json"),
+                )
                 .env("PYTHONIOENCODING", "utf-8")
                 .env("PYTHONUNBUFFERED", "1")
                 .env("ANONYMIZED_TELEMETRY", "false");
