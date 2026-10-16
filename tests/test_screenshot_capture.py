@@ -40,6 +40,7 @@ DXGI_OUTPUTS = [
 def _isolate_backend_instances(monkeypatch):
     """Ensure each test gets a fresh backend instance pool."""
     monkeypatch.setattr(screenshot, "_backend_instances", {})
+    monkeypatch.setattr(screenshot, "_degraded_backends", set())
 
 
 # ---------------------------------------------------------------------------

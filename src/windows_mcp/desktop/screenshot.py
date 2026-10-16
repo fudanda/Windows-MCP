@@ -127,7 +127,7 @@ class _DxcamBackend(_ScreenshotBackend):
                     coordinates = output.desc.DesktopCoordinates
                     if not output.attached_to_desktop:
                         continue
-                except (AttributeError, OSError, RuntimeError, ValueError, COMError):
+                except AttributeError, OSError, RuntimeError, ValueError, COMError:
                     logger.debug(
                         "Failed to read DXGI output geometry for device=%s output=%s",
                         device_idx,
@@ -227,7 +227,7 @@ class _PillowBackend(_ScreenshotBackend):
             )
         try:
             screenshot = ImageGrab.grab(**grab_kwargs)
-        except (OSError, RuntimeError, ValueError):
+        except OSError, RuntimeError, ValueError:
             if capture_rect is not None:
                 logger.warning(
                     "Failed to capture selected region directly, "
@@ -314,7 +314,7 @@ def _is_usable_capture(image: Image.Image | None) -> bool:
         return False
     try:
         image.load()
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return False
     return True
 
@@ -344,15 +344,26 @@ def capture(
     for backend_cls in chain:
         if backend_cls.name in _degraded_backends:
             continue
-        inst = _get_backend(backend_cls.name)
-        if not inst.is_available(capture_rect):
-            continue
         try:
+            inst = _get_backend(backend_cls.name)
+            if not inst.is_available(capture_rect):
+                continue
             image = inst.capture(capture_rect)
-        except (OSError, RuntimeError, ValueError, IndexError, COMError):
+        except ImportError as error:
+            # DXCam's NumPy processor can lazily import cv2 on its first frame.
+            # An optional capture dependency must not break Pillow region capture.
+            _degraded_backends.add(backend_cls.name)
+            logger.warning(
+                "Screenshot backend '%s' dependency unavailable (%s); "
+                "disabling it for this process and trying the next backend",
+                backend_cls.name,
+                error,
+            )
+            continue
+        except OSError, RuntimeError, ValueError, IndexError, COMError:
             logger.warning(
                 "Screenshot backend '%s' failed; trying next backend",
-                inst.name,
+                backend_cls.name,
                 exc_info=selected != "auto",
             )
             continue

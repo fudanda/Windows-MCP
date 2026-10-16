@@ -303,7 +303,7 @@ function App() {
             <span>CursorTouch / Windows-MCP</span>
           </div>
           <p>{tr("runtime")}</p>
-          <span className="version-label">Tauri 2 · v0.2.8</span>
+          <span className="version-label">Tauri 2 · v0.2.9</span>
         </div>
       </aside>
       <div className="main-shell">

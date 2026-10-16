@@ -75,7 +75,9 @@ def register(mcp, *, get_desktop, get_analytics):
             "application, window, foreground, focus, resize. Four modes: 'launch' (opens an application "
             "by Start Menu name), 'launch_executable' (strictly launches one executable path with separated "
             "argv and optional cwd), 'resize' (adjusts a named or active window), and 'switch' (brings a "
-            "specific window into focus)."
+            "specific window into focus). Switch and named resize resolve live window titles: "
+            "case-insensitive exact match first, then a unique substring. Missing or ambiguous "
+            "titles fail without selecting another application; fuzzy title matching is not used."
         ),
         annotations=ToolAnnotations(
             title="App",

@@ -8,6 +8,7 @@ by hand; these tests cover doing that automatically.
 """
 
 from _ctypes import COMError
+from unittest.mock import Mock
 
 import pytest
 from PIL import Image
@@ -79,6 +80,47 @@ class TestIsUsableCapture:
 
 
 class TestCaptureFallback:
+    @pytest.mark.parametrize("backend", ["auto", "dxcam"])
+    def test_missing_cv2_falls_back_with_requested_region(self, registry, monkeypatch, backend):
+        from windows_mcp.desktop.screenshot import _PillowBackend
+        from windows_mcp.uia import Rect
+
+        region = Rect(100, 200, 800, 600)
+        expected = good_image((700, 400))
+        dxcam = FakeBackend("dxcam", 10, raises=ModuleNotFoundError("No module named 'cv2'"))
+        pillow = _PillowBackend()
+        registry(dxcam, FakeBackend("pillow", 100))
+        monkeypatch.setitem(screenshot_mod._backend_instances, "pillow", pillow)
+        grab = Mock(return_value=expected)
+        monkeypatch.setattr(screenshot_mod.ImageGrab, "grab", grab)
+
+        for _ in range(2):
+            image, name = capture(region, backend=backend)
+            assert name == "pillow" and image is expected
+            assert image.size == (700, 400)
+        grab.assert_called_with(all_screens=True, bbox=(100, 200, 800, 600))
+        assert dxcam.calls == 1
+
+    @pytest.mark.parametrize("stage", ["initialization", "availability"])
+    def test_optional_import_failure_before_capture_falls_back(self, registry, monkeypatch, stage):
+        dxcam = FakeBackend("dxcam", 10)
+        image = good_image()
+        registry(dxcam, FakeBackend("pillow", 100, result=image))
+
+        def missing_dependency(*args):
+            raise ImportError("optional capture dependency missing")
+
+        if stage == "initialization":
+            monkeypatch.setitem(
+                screenshot_mod._ScreenshotBackend.registry, "dxcam", missing_dependency
+            )
+            missing_dependency.name = "dxcam"
+            missing_dependency.priority = 10
+        else:
+            monkeypatch.setattr(dxcam, "is_available", missing_dependency)
+        assert capture(None) == (image, "pillow")
+        assert "dxcam" in screenshot_mod._degraded_backends
+
     def test_working_backend_is_used(self, registry):
         image = good_image()
         dxcam = FakeBackend("dxcam", 10, result=image)

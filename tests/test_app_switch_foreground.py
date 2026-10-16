@@ -38,9 +38,9 @@ def test_switch_succeeds_only_after_target_is_foreground(
 
     assert status == 0
     assert response == (
-        f"Restored {sample_window.name.title()} from minimized and switched to it."
+        f"Restored {sample_window.name} from minimized and switched to it."
         if minimized
-        else f"Switched to {sample_window.name.title()} window."
+        else f"Switched to {sample_window.name} window."
     )
     desktop.bring_window_to_top.assert_called_once_with(sample_window.handle)
     assert clock["sleeps"] == []

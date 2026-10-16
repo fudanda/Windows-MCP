@@ -58,7 +58,7 @@ def register(mcp, *, get_desktop, get_analytics):
                 region=_as_region(region),
                 tool_name="Snapshot tool",
             )
-        except Exception as e:
+        except Exception:
             logger.warning(
                 "Snapshot failed with display=%s region=%s use_vision=%s use_dom=%s",
                 display,
@@ -67,7 +67,7 @@ def register(mcp, *, get_desktop, get_analytics):
                 use_dom if 'use_dom' in locals() else None,
                 exc_info=True,
             )
-            return [f'Error capturing desktop state: {str(e)}. Please try again.']
+            raise
 
         return build_snapshot_response(capture_result, include_ui_details=True)
 
@@ -104,14 +104,14 @@ def register(mcp, *, get_desktop, get_analytics):
                 region=_as_region(region),
                 tool_name="Screenshot tool",
             )
-        except Exception as e:
+        except Exception:
             logger.warning(
                 "Screenshot failed with display=%s region=%s",
                 display,
                 region,
                 exc_info=True,
             )
-            return [f'Error capturing screenshot: {str(e)}. Please try again.']
+            raise
 
         return build_snapshot_response(
             capture_result,

@@ -412,40 +412,31 @@ class Desktop:
         except Exception:
             return False
 
-    def _find_window_by_name(
-        self, name: str, refresh_state: bool = False
-    ) -> tuple["Window | None", str]:
-        """Find a window by fuzzy name match. Returns (window, error_msg).
-        If the returned window is None, error_msg describes the failure reason.
-
-        If refresh_state is True, always refresh desktop_state before searching;
-        otherwise refresh only when desktop_state is absent or empty.
-        """
-        if refresh_state or self.desktop_state is None or not self.desktop_state.windows:
-            self.get_state()
-        if self.desktop_state is None:
-            return None, "Failed to get desktop state. Please try again."
-
-        window_list = [
-            w
-            for w in [self.desktop_state.active_window] + (self.desktop_state.windows or [])
-            if w is not None
-        ]
+    def _find_window_by_name(self, name: str) -> tuple["Window | None", str]:
+        """Resolve a live window by exact title or a unique case-insensitive substring."""
+        if not isinstance(name, str) or not name.strip():
+            return None, "A non-empty window title is required."
+        query = name.strip().casefold()
+        # Screenshot snapshots omit windows, and older snapshots can predate a launch.
+        # Refresh just the window list rather than relying on cached desktop state.
+        window_list, _ = self.get_windows()
         if not window_list:
             return None, "No windows found on the desktop."
-
-        windows = {window.name: window for window in window_list}
-        matched_window = process.extractOne(name, list(windows.keys()), score_cutoff=70)
-        if matched_window is None:
-            return None, f"Application {name.title()} not found."
-        window_name, _ = matched_window
-        return windows.get(window_name), ""
+        matches = [window for window in window_list if window.name.casefold() == query]
+        if not matches:
+            matches = [window for window in window_list if query in window.name.casefold()]
+        if not matches:
+            return None, f"Window {name!r} not found. Use its full title or a unique substring."
+        if len(matches) > 1:
+            candidates = "; ".join(f"{window.name!r} (HWND {window.handle})" for window in matches)
+            return None, f"Ambiguous window title {name!r}: {candidates}. Use a unique window title."
+        return matches[0], ""
 
     def resize_app(
         self, name: str | None = None, size: tuple[int, int] = None, loc: tuple[int, int] = None
     ) -> tuple[str, int]:
         if name is not None:
-            target_window, error = self._find_window_by_name(name, refresh_state=True)
+            target_window, error = self._find_window_by_name(name)
             if target_window is None:
                 return error, 1
         else:
@@ -576,9 +567,9 @@ class Desktop:
                     )
                 sleep(0.05)
             if was_minimized:
-                content = f"Restored {window.name.title()} from minimized and switched to it."
+                content = f"Restored {window.name} from minimized and switched to it."
             else:
-                content = f"Switched to {window.name.title()} window."
+                content = f"Switched to {window.name} window."
             return content, 0
         except Exception as e:
             return (f"Error switching app: {str(e)}", 1)
