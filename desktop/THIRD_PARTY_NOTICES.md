@@ -1,5 +1,6 @@
 # File transfer components
 
+- **Tauri CLI 2.12.3 NSIS installer template** — https://github.com/tauri-apps/tauri/tree/tauri-cli-v2.12.3/crates/tauri-bundler/src/bundle/windows/nsis — MIT or Apache-2.0. The customized template uses the MIT license, included in `third-party/tauri-installer-LICENSE-MIT.txt`. Local changes implement unattended upgrades and service restoration.
 - **Dufs 0.46.0** — https://github.com/sigoden/dufs/tree/v0.46.0 — MIT or Apache-2.0. The bundled binary uses the MIT license; its full text is included in `third-party/dufs-LICENSE-MIT.txt` and beside `file-server/dufs.exe`. The official Windows release ZIP is pinned and SHA-256 verified by `scripts/build-file-server.ps1`.
 - **Uppy Core, Dashboard, XHR Upload, Locales** — https://github.com/transloadit/uppy — MIT. Handles browser file selection, upload queue, progress, cancellation and localization.
 - **@noble/hashes** — https://github.com/paulmillr/noble-hashes — MIT. Computes SHA-256 incrementally in browsers, including LAN HTTP origins where Web Crypto is unavailable.

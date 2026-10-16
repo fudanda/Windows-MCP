@@ -5,11 +5,14 @@ mod protocol;
 mod services;
 mod transfer;
 mod tray;
+mod upgrade;
+
+pub use upgrade::command as upgrade_command;
 
 use manager::{Manager, Snapshot};
 use serde::Serialize;
 use services::Services;
-use tauri::{Manager as _, State, menu::ContextMenu};
+use tauri::{Emitter, Manager as _, State, menu::ContextMenu};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AppError {
@@ -169,6 +172,18 @@ pub fn run() {
             app.manage(manager);
             app.manage(transfer);
             tray::init(app.handle(), &selected_language)?;
+            upgrade::listen(app.handle().clone())?;
+            let args: Vec<_> = std::env::args().collect();
+            if let Some(resume) = upgrade::Resume::from_args(&args) {
+                let app = app.handle().clone();
+                let services = app.state::<Services>().inner().clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    if let Err(error) = resume.restore(&services) {
+                        let _ = app.emit_to("main", "tray-error", error);
+                        tray::show_main(&app);
+                    }
+                });
+            }
             Ok(())
         })
         .on_window_event(|window, event| {

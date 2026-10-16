@@ -65,6 +65,12 @@ npm run build:desktop
 
 ## 使用
 
+0.2.11 支持一键升级：双击新版安装包，已有 NSIS 安装直接进入升级进度，不再弹出语言选择、维护选择或卸载向导。安装程序自动停止当前安装目录中的旧管理器、MCP 和 Dufs，静默清理旧版登记的程序文件，再安装并启动新版；升级前运行中的 MCP / 文件服务会自动恢复，原本停止的服务继续保持停止。
+
+升级保留安装目录、快捷方式、MCP Token、传输 Token、端口、语言、已配对设备与共享目录。清理调用旧卸载程序的 `/S /UPDATE` 模式，不递归清空安装目录，也不删除配置或共享文件。安装目录和进程身份通过原生 Windows API 核对，不按进程名结束其他目录的同名程序；0.2.11 起优先请求正常退出，升级更早版本时仅结束已核对的旧进程。无法安全停止或清理时中止升级；安装期间活动传输会停止，首版不支持安装失败后的程序文件自动回滚。
+
+正常新装保留语言和安装目录向导；同版本重装走同一条一键升级流程，降级安装会被拒绝。安装模板基于 Tauri CLI 2.12.3，位于 `src-tauri/installer/installer.nsi`，修改 Tauri CLI 版本时应核对模板并重跑真实升级测试。
+
 0.2.10 将屏幕顶部的 AI 控制提示默认改为简体中文：“AI 正在控制此电脑”“按 Ctrl + Alt + Shift + Backspace 接管电脑”。提示使用中文字体，并跟随管理器的简体中文 / English 选择；服务运行期间切换语言也会更新提示，无需重启 MCP。接管快捷键、控制权保护和截图时隐藏提示的机制保持原有行为。
 
 独立启动后端时，可用 `WINDOWS_MCP_LANGUAGE=zh-CN` / `en` 选择提示语言，默认简体中文。管理器通过启动环境及保存的 `manager.json` 同步语言；文件暂时无法读取时保留上一次有效语言。
@@ -184,6 +190,8 @@ MCP 测试客户端的单条 SSE 消息默认上限为 **1 GiB（1,073,741,824 �
 ## English
 
 Tauri 2 desktop manager for the official Windows-MCP backend. Defaults to Simplified Chinese with persistent English switching. Supports process start/stop, LAN binding, ports, DPAPI-encrypted bearer tokens, client configuration export, logs, and a real MCP connection check.
+
+Version 0.2.11 upgrades an existing NSIS installation directly, without language, maintenance or uninstall dialogs. It stops only processes belonging to that installation, runs its old uninstaller silently with `/S /UPDATE`, installs the new version, then reopens the manager and restores previously running services. Configuration, tokens, peers, shared files and shortcuts are retained. Fresh installations keep the normal wizard; downgrades are blocked. Active transfers stop during upgrade. This version does not provide automatic program-file rollback after installation failure.
 
 Version 0.2.10 localizes the on-screen AI-control notice, defaulting to Simplified Chinese with CJK fonts. It follows the manager's saved Chinese/English setting while the server is running. Standalone servers can set `WINDOWS_MCP_LANGUAGE=zh-CN` or `en`. The takeover shortcut and screenshot exclusion retain their existing behavior.
 
