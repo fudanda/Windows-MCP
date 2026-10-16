@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import appIcon from "../src-tauri/icons/128x128.png";
 import Uppy from "@uppy/core";
 import Dashboard from "@uppy/dashboard";
 import XHRUpload from "@uppy/xhr-upload";
@@ -248,9 +249,7 @@ export default function WebTransfer() {
     <div className="web-transfer">
       <header className="web-transfer-header">
         <div className="web-transfer-brand">
-          <span className="brand-symbol">
-            <ArrowUpDown size={24} />
-          </span>
+          <img className="brand-symbol" src={appIcon} alt="" />
           <div>
             <strong>Windows-MCP</strong>
             <small>

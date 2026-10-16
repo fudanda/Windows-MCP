@@ -1,6 +1,6 @@
 [package]
 name = "windows-mcp-manager"
-version = "0.2.5"
+version = "0.2.8"
 description = "Desktop manager for the official Windows-MCP server"
 authors = ["fudanda"]
 edition = "2024"
@@ -28,8 +28,9 @@ base64 = "0.22"
 getrandom = "0.3"
 if-addrs = "0.14"
 axum = "0.8"
-tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "fs", "io-util"] }
 tokio-util = { version = "0.7", features = ["io"] }
+async-deflate-zip = "=0.4.0"
 futures-util = "0.3"
 include_dir = "0.7"
 sha2 = "0.10"

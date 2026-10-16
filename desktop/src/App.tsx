@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import appIcon from "../src-tauri/icons/128x128.png";
 import {
   Activity,
   ArrowUpDown,
@@ -276,9 +277,7 @@ function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-symbol">
-            <Monitor size={23} />
-          </span>
+          <img className="brand-symbol" src={appIcon} alt="" />
           <div>
             <strong>Windows-MCP</strong>
             <span>Manager</span>
@@ -304,7 +303,7 @@ function App() {
             <span>CursorTouch / Windows-MCP</span>
           </div>
           <p>{tr("runtime")}</p>
-          <span className="version-label">Tauri 2 · v0.2.5</span>
+          <span className="version-label">Tauri 2 · v0.2.8</span>
         </div>
       </aside>
       <div className="main-shell">

@@ -1,3 +1,4 @@
+mod archive;
 mod model;
 #[cfg(test)]
 mod tests;

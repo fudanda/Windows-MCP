@@ -63,6 +63,8 @@ npm run build:desktop
 
 ## 使用
 
+0.2.8 使用统一的 Windows-MCP 图标，覆盖安装包、卸载程序、应用窗口、桌面快捷方式、系统托盘及管理页面。设计源文件与生成提示词保存在 `artwork/`；平台图标由 Tauri CLI 导出。
+
 1. 默认生成随机 Token，选择监听端口。
 2. “允许局域网连接”默认开启；如果只需本机访问，可以手动关闭。
 3. 点击“一键启动 MCP 和文件传输”同时开启两项服务；也可单独“保存配置”或“保存并启动”MCP。
@@ -83,6 +85,10 @@ npm run build:desktop
 
 ## 局域网文件传输
 
+0.2.7 修复 ZIP 导出遗漏空目录的问题。ZIP 保留嵌套目录、空文件及中文名称；导出完全空的文件夹时，ZIP 包含该文件夹的同名目录项。打包采用流式压缩，支持进度和取消，排除私有暂存目录及链接。
+
+0.2.6 修复文件已完整下载却显示“已取消”的任务状态问题，覆盖普通文件、空文件和范围下载；中途断开或主动取消仍显示“已取消”。
+
 1. 在测试机安装并打开管理器，进入“文件传输”。
 2. 选择专用的“接收与共享目录”，默认是下载目录下的 `Windows-MCP`；该目录中的已发布文件可被持有传输 Token 的用户下载。
 3. 默认传输端口为 `8002`，允许局域网访问；可在服务管理页点击“一键启动 MCP 和文件传输”，或在文件传输页单独点击“开启文件服务”。组合启动使用本页已保存的配置。
@@ -93,7 +99,7 @@ npm run build:desktop
 
 上传按流处理，不把整个文件读入内存；传输服务独立于 MCP SSE 上限，首版单文件限额为 1 TiB，最多四个活动任务。校验失败或取消的文件不会发布，已存在的同名目标不会被覆盖。文件夹按文件逐个发布，任务取消时已完成的文件会保留。任务历史仅保留当前应用会话最近 100 条。
 
-基于 Dufs 的 HTTP/WebDAV 文件与 ZIP 流式 I/O、Uppy 的选择/队列/进度/取消，以及 Noble Hashes 的浏览器增量 SHA-256；项目负责鉴权、目录范围、发布规则、任务和 MCP 适配。独立传输 Token 和已保存设备凭据整体使用 DPAPI 加密保存在 `transfer.json`。网页会话使用 HttpOnly、SameSite=Strict Cookie，页面和文件接口同源。HTTP 适用于可信局域网；跨设备连接需要相应端口可通过 Windows 防火墙。
+基于 Dufs 的 HTTP/WebDAV 文件 I/O、async-deflate-zip 的流式 ZIP 压缩、Uppy 的选择/队列/进度/取消，以及 Noble Hashes 的浏览器增量 SHA-256；项目负责鉴权、目录范围、发布规则、任务和 MCP 适配。ZIP 每次最多包含 10,000 个条目及 1 TiB 的源文件，压缩内容使用有界缓冲区传输，不在内存或磁盘中暂存整个压缩包。独立传输 Token 和已保存设备凭据整体使用 DPAPI 加密保存在 `transfer.json`。网页会话使用 HttpOnly、SameSite=Strict Cookie，页面和文件接口同源。HTTP 适用于可信局域网；跨设备连接需要相应端口可通过 Windows 防火墙。
 
 ## Codex 命令传输（无需浏览器或本机桌面端）
 
@@ -170,6 +176,10 @@ MCP 测试客户端的单条 SSE 消息默认上限为 **1 GiB（1,073,741,824 �
 ## English
 
 Tauri 2 desktop manager for the official Windows-MCP backend. Defaults to Simplified Chinese with persistent English switching. Supports process start/stop, LAN binding, ports, DPAPI-encrypted bearer tokens, client configuration export, logs, and a real MCP connection check.
+
+Version 0.2.7 preserves directory entries in ZIP exports, including nested empty directories. An entirely empty selection produces a ZIP containing the selected folder's directory entry. Archives stream through bounded buffers with progress and cancellation; private staging and links are excluded.
+
+Version 0.2.6 fixes fully downloaded files being marked as cancelled, including empty files and range requests. Interrupted and explicitly cancelled downloads remain cancelled.
 
 Version 0.2.5 adds a native system tray. Closing the main window hides it and keeps services running. Left-click the tray icon or launch the app again to restore the existing window. Right-click the icon, or use the window's Tray menu button, to show the window, start/stop both services using saved settings, or quit and stop all owned services. Menu labels follow the interface language. Window and tray actions share the Rust lifecycle controller so stopping also cancels queued starts.
 

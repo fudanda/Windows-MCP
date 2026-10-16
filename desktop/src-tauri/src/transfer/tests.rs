@@ -1,4 +1,5 @@
 use super::*;
+use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 use std::io::Cursor;
 
@@ -90,6 +91,92 @@ fn wait(manager: &TransferManager, id: &str) -> Task {
 }
 fn hash(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
+}
+
+fn latest_download(manager: &TransferManager, name: &str) -> Task {
+    manager
+        .snapshot()
+        .tasks
+        .into_iter()
+        .find(|t| t.direction == "download" && t.name == name)
+        .unwrap()
+}
+
+#[test]
+fn http_download_completion_tracks_empty_files_and_content_length() {
+    let fixture = Fixture::new();
+    let http = fixture.http();
+    for (name, size) in [
+        ("empty.bin", 0),
+        ("small.bin", 23),
+        ("large.bin", 6 * 1024 * 1024 + 17),
+    ] {
+        let bytes = vec![73u8; size];
+        fs::write(fixture.root.join("inbox").join(name), &bytes).unwrap();
+        let response = http
+            .get(wire_url(&fixture.url, name).unwrap())
+            .bearer_auth(&fixture.token)
+            .send()
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.content_length(), Some(size as u64));
+        assert_eq!(hash(&response.bytes().unwrap()), hash(&bytes));
+        let task = wait(
+            &fixture.manager,
+            &latest_download(&fixture.manager, name).id,
+        );
+        assert_eq!(task.status, "completed", "{name}: {:?}", task.error);
+        assert_eq!(task.total_bytes, size as u64);
+        assert_eq!(task.transferred_bytes, size as u64);
+        assert_eq!(task.completed_files, 1);
+        assert!(task.error.is_none());
+    }
+
+    let response = http
+        .get(wire_url(&fixture.url, "large.bin").unwrap())
+        .bearer_auth(&fixture.token)
+        .header("Range", "bytes=128-1151")
+        .send()
+        .unwrap();
+    assert_eq!(response.status(), 206);
+    assert_eq!(response.content_length(), Some(1024));
+    assert_eq!(&response.bytes().unwrap()[..], &[73u8; 1024]);
+    let task = wait(
+        &fixture.manager,
+        &latest_download(&fixture.manager, "large.bin").id,
+    );
+    assert_eq!(task.status, "completed", "{:?}", task.error);
+    assert_eq!(task.total_bytes, 1024);
+    assert_eq!(task.transferred_bytes, 1024);
+}
+
+#[test]
+fn http_download_disconnect_and_explicit_cancel_remain_cancelled() {
+    let fixture = Fixture::new();
+    let total = 32 * 1024 * 1024;
+    fs::File::create(fixture.root.join("inbox/interrupted.bin"))
+        .unwrap()
+        .set_len(total)
+        .unwrap();
+    for explicit_cancel in [false, true] {
+        let mut response = fixture
+            .http()
+            .get(wire_url(&fixture.url, "interrupted.bin").unwrap())
+            .bearer_auth(&fixture.token)
+            .send()
+            .unwrap();
+        response.read_exact(&mut [0u8; 4096]).unwrap();
+        let task = latest_download(&fixture.manager, "interrupted.bin");
+        assert!(task.transferred_bytes < total);
+        if explicit_cancel {
+            fixture.manager.cancel(&task.id).unwrap();
+        }
+        drop(response);
+        let task = wait(&fixture.manager, &task.id);
+        assert_eq!(task.status, "cancelled", "{:?}", task.error);
+        assert!(task.transferred_bytes < total);
+        assert_eq!(task.completed_files, 0);
+    }
 }
 
 #[test]
@@ -221,6 +308,129 @@ fn http_auth_origin_checksum_download_and_conflict() {
 }
 
 #[test]
+fn zip_export_preserves_nested_empty_directories_and_empty_selection() {
+    let fixture = Fixture::new();
+    let source = fixture.root.join("inbox/中文 folder % #");
+    fs::create_dir_all(source.join("nested/空目录/deep")).unwrap();
+    fs::create_dir_all(source.join("empty")).unwrap();
+    fs::write(source.join("nested/data.bin"), vec![73u8; 1024 * 1024]).unwrap();
+    fs::write(source.join("zero.txt"), []).unwrap();
+    // Private receive staging must never be included in an archive.
+    fs::create_dir(source.join(".WMCP-private")).unwrap();
+    fs::write(source.join(".WMCP-private/secret"), b"private").unwrap();
+    fs::write(source.join(".wmcp-secret"), b"private").unwrap();
+    let mut url = wire_url(&fixture.url, "中文 folder % #").unwrap();
+    url.set_query(Some("zip"));
+    let http = fixture.http();
+    let response = http.get(url).bearer_auth(&fixture.token).send().unwrap();
+    assert_eq!(response.status(), 200);
+    let mut archive = zip::ZipArchive::new(Cursor::new(response.bytes().unwrap())).unwrap();
+    for name in ["nested/", "nested/空目录/", "nested/空目录/deep/", "empty/"] {
+        assert!(archive.by_name(name).unwrap().is_dir(), "{name}");
+    }
+    assert!(
+        archive
+            .file_names()
+            .all(|name| !name.to_ascii_lowercase().contains(".wmcp-"))
+    );
+    let mut bytes = Vec::new();
+    archive
+        .by_name("nested/data.bin")
+        .unwrap()
+        .read_to_end(&mut bytes)
+        .unwrap();
+    assert_eq!(hash(&bytes), hash(&vec![73u8; 1024 * 1024]));
+    assert_eq!(archive.by_name("zero.txt").unwrap().size(), 0);
+    let extracted = fixture.root.join("extracted");
+    archive.extract(&extracted).unwrap();
+    assert!(extracted.join("nested/空目录/deep").is_dir());
+    assert!(extracted.join("empty").is_dir());
+    let task = wait(
+        &fixture.manager,
+        &latest_download(&fixture.manager, "中文 folder % #").id,
+    );
+    assert_eq!(task.status, "completed", "{:?}", task.error);
+    assert_eq!(task.transferred_bytes, task.total_bytes);
+
+    fs::create_dir(fixture.root.join("inbox/全空目录")).unwrap();
+    let mut url = wire_url(&fixture.url, "全空目录").unwrap();
+    url.set_query(Some("zip"));
+    let response = http.get(url).bearer_auth(&fixture.token).send().unwrap();
+    assert_eq!(response.status(), 200);
+    let mut archive = zip::ZipArchive::new(Cursor::new(response.bytes().unwrap())).unwrap();
+    assert_eq!(archive.len(), 1);
+    assert!(archive.by_name("全空目录/").unwrap().is_dir());
+    archive.extract(&extracted).unwrap();
+    assert!(extracted.join("全空目录").is_dir());
+    let task = wait(
+        &fixture.manager,
+        &latest_download(&fixture.manager, "全空目录").id,
+    );
+    assert_eq!(task.status, "completed", "{:?}", task.error);
+}
+
+#[test]
+fn zip_export_disconnect_and_cancel_remain_cancelled() {
+    let fixture = Fixture::new();
+    fs::create_dir(fixture.root.join("inbox/streaming")).unwrap();
+    let mut payload = vec![0u8; 32 * 1024 * 1024];
+    getrandom::fill(&mut payload).unwrap();
+    fs::write(fixture.root.join("inbox/streaming/random.bin"), &payload).unwrap();
+    let mut url = wire_url(&fixture.url, "streaming").unwrap();
+    url.set_query(Some("zip"));
+    for explicit_cancel in [false, true] {
+        let mut response = fixture
+            .http()
+            .get(url.clone())
+            .bearer_auth(&fixture.token)
+            .send()
+            .unwrap();
+        response.read_exact(&mut [0u8; 4096]).unwrap();
+        let task = latest_download(&fixture.manager, "streaming");
+        assert!(task.active());
+        if explicit_cancel {
+            fixture.manager.cancel(&task.id).unwrap();
+        }
+        drop(response);
+        let task = wait(&fixture.manager, &task.id);
+        assert_eq!(task.status, "cancelled", "{:?}", task.error);
+        assert_eq!(task.completed_files, 0);
+    }
+}
+
+#[test]
+fn zip_export_empty_shared_root_and_head() {
+    let fixture = Fixture::new();
+    let url = format!("{}/files/?zip", fixture.url);
+    let http = fixture.http();
+    let head = http.head(&url).bearer_auth(&fixture.token).send().unwrap();
+    assert_eq!(head.status(), 200);
+    assert_eq!(head.headers()["content-type"], "application/zip");
+    assert!(fixture.manager.snapshot().tasks.is_empty());
+    let response = http.get(url).bearer_auth(&fixture.token).send().unwrap();
+    assert_eq!(response.status(), 200);
+    let mut archive = zip::ZipArchive::new(Cursor::new(response.bytes().unwrap())).unwrap();
+    assert_eq!(archive.len(), 1);
+    assert!(archive.by_name("Shared/").unwrap().is_dir());
+    let task = wait(&fixture.manager, &latest_download(&fixture.manager, "").id);
+    assert_eq!(task.status, "completed", "{:?}", task.error);
+}
+
+#[test]
+fn zip_export_propagates_producer_errors() {
+    let fixture = Fixture::new();
+    let results = tauri::async_runtime::block_on(
+        archive::stream(
+            fixture.root.join("missing"),
+            "missing".into(),
+            Arc::new(AtomicBool::new(false)),
+        )
+        .collect::<Vec<_>>(),
+    );
+    assert!(results.iter().any(Result::is_err));
+}
+
+#[test]
 fn browser_cookie_and_zip_use_library() {
     let fixture = Fixture::new();
     let http = fixture.http();
@@ -259,12 +469,20 @@ fn browser_cookie_and_zip_use_library() {
     url.set_query(Some("zip"));
     let response = http.get(url).header("Cookie", cookie).send().unwrap();
     assert_eq!(response.status(), 200);
+    assert_eq!(response.content_length(), None);
     let archive = response.bytes().unwrap();
     let zip = zip::ZipArchive::new(Cursor::new(archive)).unwrap();
     assert!(
         zip.file_names()
             .any(|name| name.ends_with("nested/file.txt"))
     );
+    let task = wait(
+        &fixture.manager,
+        &latest_download(&fixture.manager, "folder").id,
+    );
+    assert_eq!(task.status, "completed", "{:?}", task.error);
+    assert_eq!(task.transferred_bytes, task.total_bytes);
+    assert_eq!(task.completed_files, 1);
     let mut url = wire_url(&fixture.url, "folder").unwrap();
     url.set_query(Some("json"));
     let listing = http.get(url).header("Cookie", cookie).send().unwrap();

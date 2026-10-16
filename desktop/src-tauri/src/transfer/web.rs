@@ -172,6 +172,8 @@ async fn static_file(uri: Uri) -> Response {
         "text/css; charset=utf-8"
     } else if path.ends_with(".svg") {
         "image/svg+xml"
+    } else if path.ends_with(".png") {
+        "image/png"
     } else {
         "application/octet-stream"
     };
@@ -233,7 +235,7 @@ fn upstream_url(
     url.set_query(query);
     Ok(url)
 }
-fn destination(root: &Path, path: &str) -> Result<PathBuf, AppError> {
+pub(super) fn destination(root: &Path, path: &str) -> Result<PathBuf, AppError> {
     relative(path)?;
     let mut target = root.to_path_buf();
     let parts: Vec<_> = path.split('/').collect();
@@ -295,6 +297,16 @@ async fn proxy(
     if method.as_str() == "MKCOL" && path.is_empty() {
         return Err(error("transfer_path", "Choose a folder name").into());
     }
+    if query.as_deref() == Some("zip") && matches!(method, Method::GET | Method::HEAD) {
+        let selected = if path.is_empty() {
+            backend.root.clone()
+        } else {
+            destination(&backend.root, &path)?
+        };
+        if selected.is_dir() {
+            return zip_response(manager, selected, path, method);
+        }
+    }
     let mut url = upstream_url(&backend, &path, query.as_deref())?;
     if !path.is_empty() && destination(&backend.root, &path)?.is_dir() {
         url.path_segments_mut()
@@ -344,33 +356,101 @@ async fn proxy(
         } else {
             name.to_string()
         };
-        let encoded: String = name
-            .as_bytes()
-            .iter()
-            .map(|b| format!("%{b:02X}"))
-            .collect();
-        builder = builder.header(
-            header::CONTENT_DISPOSITION,
-            format!("attachment; filename=\"download\"; filename*=UTF-8''{encoded}"),
-        );
+        builder = builder.header(header::CONTENT_DISPOSITION, attachment(&name));
     }
     if method != Method::GET || !status.is_success() || metadata {
         return builder
             .body(Body::from_stream(response.bytes_stream()))
             .map_err(|e| ApiError(io_error(e)));
     }
-    let mut task = Task::new("download", "Browser".into(), path.clone())?;
+    let length = response.content_length();
+    let task = download_task(&manager, path, length)?;
+    builder
+        .body(download_body(
+            manager,
+            task,
+            length,
+            Box::pin(
+                response
+                    .bytes_stream()
+                    .map(|result| result.map_err(network)),
+            ),
+        ))
+        .map_err(|e| ApiError(io_error(e)))
+}
+
+fn attachment(name: &str) -> String {
+    let encoded: String = name
+        .as_bytes()
+        .iter()
+        .map(|b| format!("%{b:02X}"))
+        .collect();
+    format!("attachment; filename=\"download\"; filename*=UTF-8''{encoded}")
+}
+
+fn zip_response(
+    manager: TransferManager,
+    root: PathBuf,
+    path: String,
+    method: Method,
+) -> Result<Response, ApiError> {
+    ordinary(&root)?;
+    let name = path
+        .rsplit('/')
+        .find(|name| !name.is_empty())
+        .unwrap_or("Shared")
+        .to_string();
+    let builder = axum::http::Response::builder()
+        .header(header::CACHE_CONTROL, "no-store")
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(header::CONTENT_TYPE, "application/zip")
+        .header(
+            header::CONTENT_DISPOSITION,
+            attachment(&format!("{name}.zip")),
+        );
+    if method == Method::HEAD {
+        return builder
+            .body(Body::empty())
+            .map_err(|e| ApiError(io_error(e)));
+    }
+    let task = download_task(&manager, path, None)?;
+    let stream = super::archive::stream(root, name, task.cancel.clone());
+    builder
+        .body(download_body(manager, task, None, Box::pin(stream)))
+        .map_err(|e| ApiError(io_error(e)))
+}
+
+fn download_task(
+    manager: &TransferManager,
+    path: String,
+    length: Option<u64>,
+) -> Result<Task, AppError> {
+    let mut task = Task::new("download", "Browser".into(), path)?;
     task.status = "transferring".into();
-    task.total_bytes = response.content_length().unwrap_or(0);
+    task.total_bytes = length.unwrap_or(0);
     task.file_count = 1;
     manager.add_task(task.clone())?;
-    let state = Download {
-        stream: Box::pin(response.bytes_stream()),
+    Ok(task)
+}
+
+fn download_body(
+    manager: TransferManager,
+    task: Task,
+    length: Option<u64>,
+    stream: Pin<Box<dyn Stream<Item = Result<Bytes, AppError>> + Send>>,
+) -> Body {
+    let mut state = Download {
+        stream,
         manager,
         id: task.id,
         cancel: task.cancel,
+        remaining: length,
         done: false,
     };
+    // Hyper need not poll an empty body or request EOF after Content-Length bytes.
+    if state.remaining == Some(0) {
+        state.complete();
+    }
     let stream = futures_util::stream::unfold(state, |mut state| async move {
         if state.done {
             return None;
@@ -387,41 +467,53 @@ async fn proxy(
                 state
                     .manager
                     .update(&state.id, |t| t.transferred_bytes += bytes.len() as u64);
+                state.remaining = state
+                    .remaining
+                    .map(|n| n.saturating_sub(bytes.len() as u64));
+                if state.remaining == Some(0) {
+                    state.complete();
+                }
                 Some((Ok(bytes), state))
             }
             Some(Err(e)) => {
                 state.done = true;
-                state.manager.finish(&state.id, Err(network(e)));
+                state.manager.finish(&state.id, Err(e));
                 Some((Err(network("Download interrupted")), state))
             }
             None => {
-                state.done = true;
-                state.manager.update(&state.id, |t| {
-                    if t.total_bytes == 0 {
-                        t.total_bytes = t.transferred_bytes;
-                    }
-                });
-                state
-                    .manager
-                    .finish(&state.id, Ok("Browser download".into()));
+                state.complete();
                 None
             }
         }
     });
-    builder
-        .body(Body::from_stream(stream))
-        .map_err(|e| ApiError(io_error(e)))
+    Body::from_stream(stream)
 }
 struct Download {
-    stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
+    stream: Pin<Box<dyn Stream<Item = Result<Bytes, AppError>> + Send>>,
     manager: TransferManager,
     id: String,
     cancel: Arc<AtomicBool>,
+    remaining: Option<u64>,
     done: bool,
+}
+impl Download {
+    fn complete(&mut self) {
+        self.done = true;
+        self.manager.update(&self.id, |t| {
+            if self.remaining.is_none() {
+                t.total_bytes = t.transferred_bytes;
+            }
+        });
+        self.manager.finish(
+            &self.id,
+            check_cancel(&self.cancel).map(|_| "Browser download".into()),
+        );
+    }
 }
 impl Drop for Download {
     fn drop(&mut self) {
         if !self.done {
+            self.cancel.store(true, Ordering::Relaxed);
             self.manager.finish(
                 &self.id,
                 Err(error("transfer_cancelled", "Browser disconnected")),

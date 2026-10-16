@@ -21,14 +21,11 @@
   padding: 0 9px;
 }
 .brand-symbol {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 39px;
   height: 39px;
-  border-radius: 11px;
-  background: #2563eb;
-  color: white;
-  box-shadow: 0 3px 7px #2563eb20;
+  object-fit: contain;
+  flex: none;
 }
 .brand strong {
   display: block;
