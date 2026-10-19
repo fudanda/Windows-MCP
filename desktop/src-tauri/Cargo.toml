@@ -1,6 +1,6 @@
 [package]
 name = "windows-mcp-manager"
-version = "0.2.11"
+version = "0.2.12"
 description = "Desktop manager for the official Windows-MCP server"
 authors = ["fudanda"]
 edition = "2024"

@@ -1,5 +1,7 @@
 # Windows-MCP 桌面管理器
 
+0.2.12 增加旧实例与端口冲突检测，连接检测同时验证本机和活动局域网地址，并显示已验证地址及失败详情。
+
 基于 **Tauri 2 + React + Rust**，直接启动本仓库的官方 `windows-mcp` 后端。桌面操作工具仍由 CursorTouch/Windows-MCP 提供。
 
 - 默认简体中文，可随时切换 English，重启后保留选择。
