@@ -65,6 +65,8 @@ const zh = {
   noLan: "未检测到局域网地址，请确认网络连接。",
   copied: "已复制",
   connected: "MCP 连接正常",
+  verifiedAddresses: "已验证的 MCP 地址",
+  testHint: "验证本机和已启用的局域网地址的 MCP 握手及工具列表。",
   preview: "浏览器预览 · 启动和配置保存请使用桌面应用",
   backendMissing: "后端尚未准备好，请先运行后端准备脚本。",
   logHint: "本次应用运行期间的后端输出，Token 会自动隐藏。",
@@ -146,6 +148,8 @@ const en: Record<Key, string> = {
   noLan: "No local network address found. Check your network connection.",
   copied: "Copied",
   connected: "MCP connection verified",
+  verifiedAddresses: "Verified MCP addresses",
+  testHint: "Verify the MCP handshake and tools on loopback and enabled LAN addresses.",
   preview:
     "Browser preview · Use the desktop app to start the service and save settings",
   backendMissing: "Backend unavailable. Run the preparation script first.",
@@ -185,8 +189,24 @@ const errors: Record<string, [string, string]> = {
     "Choose Simplified Chinese or English.",
   ],
   port_in_use: [
-    "端口已被占用，请更换端口后重试。",
-    "The port is in use. Choose another port.",
+    "端口被其他进程占用。请根据详情中的地址和 PID 退出占用进程，或更换端口。",
+    "Another process is using this port. Check the address and PID in the details, then close that process or choose another port.",
+  ],
+  legacy_instance: [
+    "检测到其他 Windows-MCP 实例占用端口。请根据详情中的 PID 退出旧实例后重试。",
+    "Another Windows-MCP instance is using this port. Close the old instance identified by the PID in the details, then retry.",
+  ],
+  network_check_failed: [
+    "无法检查网络地址或监听进程，请查看详情后重试。",
+    "Could not inspect network addresses or listening processes. Check the details and retry.",
+  ],
+  lan_unavailable: [
+    "已开启局域网访问，但未找到活动的局域网 IPv4 地址。请检查网络连接。",
+    "LAN access is enabled, but no active private IPv4 address was found. Check the network connection.",
+  ],
+  lan_connection_failed: [
+    "本机检测通过，但局域网 MCP 验证失败。请查看失败地址及状态，检查旧实例、Token 和防火墙。",
+    "Loopback passed, but LAN MCP verification failed. Check the failing address and status, other instances, token and firewall.",
   ],
   stop_before_save: [
     "请先停止服务，再保存连接设置。",

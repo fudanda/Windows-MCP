@@ -411,6 +411,30 @@ fieldset:disabled input {
   background: #f7f9fc;
   color: #7b8798;
 }
+.verified-addresses {
+  margin-top: 16px;
+  font-size: 12px;
+  color: #637085;
+}
+.verified-addresses ul {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.verified-addresses li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+.verified-addresses svg {
+  flex-shrink: 0;
+  color: #12b76a;
+}
+.verified-addresses code {
+  min-width: 0;
+}
 .field-hint {
   font-size: 11px;
   color: #98a3b3;
@@ -735,6 +759,9 @@ footer > span {
   font-size: 11px;
   margin-top: 8px;
   overflow-wrap: anywhere;
+}
+.error-banner details code {
+  white-space: pre-wrap;
 }
 .toast {
   position: fixed;

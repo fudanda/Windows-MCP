@@ -520,6 +520,7 @@ function App() {
                       </button>
                       <button
                         className="text-button"
+                        title={tr("testHint")}
                         disabled={snapshot.phase !== "running" || Boolean(busy)}
                         onClick={() =>
                           void action("test", async () => {
@@ -564,6 +565,19 @@ function App() {
                         </strong>
                       </div>
                     </div>
+                    {snapshot.probe && (
+                      <div className="verified-addresses">
+                        <span>{tr("verifiedAddresses")}</span>
+                        <ul>
+                          {snapshot.probe.verifiedUrls.map((url) => (
+                            <li key={url}>
+                              <CheckCircle2 size={13} />
+                              <code>{url}</code>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </section>
                   <div className="content-grid">
                     <section className="card settings-card">

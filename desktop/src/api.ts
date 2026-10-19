@@ -12,6 +12,7 @@ export interface Probe {
   serverVersion: string;
   toolCount: number;
   latencyMs: number;
+  verifiedUrls: string[];
 }
 export interface Snapshot {
   generation: number;
