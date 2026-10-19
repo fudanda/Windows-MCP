@@ -1,5 +1,6 @@
 mod config;
 mod manager;
+mod network;
 mod platform;
 mod protocol;
 mod services;

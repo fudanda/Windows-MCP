@@ -1,6 +1,7 @@
 use crate::{
     AppError,
     config::{self, Config},
+    network::{self, Address},
     platform::Job,
     protocol::{self, Probe},
 };
@@ -23,11 +24,6 @@ use std::{
 pub struct LogLine {
     pub timestamp: u64,
     pub message: String,
-}
-#[derive(Clone, Serialize)]
-pub struct Address {
-    pub name: String,
-    pub ip: String,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -165,20 +161,7 @@ impl Manager {
             inner.started_at = None;
             inner.probe = None;
         }
-        let mut addresses: Vec<Address> = if_addrs::get_if_addrs()
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|interface| interface.oper_status == if_addrs::IfOperStatus::Up)
-            .filter_map(|interface| match interface.ip() {
-                std::net::IpAddr::V4(ip) if ip.is_private() && !ip.is_loopback() => Some(Address {
-                    name: interface.name,
-                    ip: ip.to_string(),
-                }),
-                _ => None,
-            })
-            .collect();
-        addresses.sort_by(|a, b| a.ip.cmp(&b.ip));
-        addresses.dedup_by(|a, b| a.ip == b.ip);
+        let addresses = network::addresses().unwrap_or_default();
         Snapshot {
             generation: inner.generation,
             config: inner.config.clone(),
@@ -238,6 +221,7 @@ impl Manager {
             }
             let config = inner.config.clone();
             config.validate()?;
+            network::check_port(config.port, None)?;
             let (executable, mut args) = self.backend()?;
             let reservation = TcpListener::bind((config.host(), config.port))
                 .map_err(|e| AppError::new("port_in_use", e.to_string()))?;
@@ -363,10 +347,18 @@ impl Manager {
                     return Ok(self.snapshot());
                 }
             }
-            match protocol::probe(&config) {
+            match protocol::probe_local(&config) {
                 Ok(probe) => {
                     let mut inner = self.lock();
                     if inner.generation == generation && inner.process.is_some() {
+                        let pid = inner.process.as_ref().unwrap().child.id();
+                        if let Err(error) = network::check_port(config.port, Some(pid)) {
+                            inner.process.take().unwrap().terminate();
+                            inner.phase = "error".into();
+                            inner.error = Some(error);
+                            drop(inner);
+                            return Ok(self.snapshot());
+                        }
                         inner.phase = "running".into();
                         inner.started_at = Some(now());
                         inner.probe = Some(probe);
@@ -418,20 +410,41 @@ impl Manager {
         self.snapshot()
     }
     pub fn test_connection(&self) -> Result<Probe, AppError> {
-        let (config, generation) = {
-            let inner = self.lock();
+        let (config, generation, pid) = {
+            let mut inner = self.lock();
             if inner.phase != "running" {
                 return Err(AppError::new("not_running", ""));
             }
-            (inner.config.clone(), inner.generation)
+            let pid = inner
+                .process
+                .as_ref()
+                .ok_or_else(|| AppError::new("not_running", ""))?
+                .child
+                .id();
+            inner.probe = None;
+            inner.error = None;
+            (inner.config.clone(), inner.generation, pid)
         };
-        let probe = protocol::probe(&config)?;
+        let result: Result<Probe, AppError> = (|| {
+            network::check_port(config.port, Some(pid))?;
+            let probe = protocol::probe(&config)?;
+            network::check_port(config.port, Some(pid))?;
+            Ok(probe)
+        })();
         let mut inner = self.lock();
         if inner.generation != generation || inner.phase != "running" {
             return Err(AppError::new("not_running", ""));
         }
-        inner.probe = Some(probe.clone());
-        Ok(probe)
+        match result {
+            Ok(probe) => {
+                inner.probe = Some(probe.clone());
+                Ok(probe)
+            }
+            Err(error) => {
+                inner.error = Some(error.clone());
+                Err(error)
+            }
+        }
     }
 }
 
@@ -472,11 +485,25 @@ mod tests {
     #[test]
     #[ignore = "Starts the real official Windows-MCP backend; run explicitly"]
     fn official_backend_lifecycle_and_authentication() {
+        struct BackendGuard(Manager);
+        impl Drop for BackendGuard {
+            fn drop(&mut self) {
+                self.0.stop();
+            }
+        }
+        struct LegacyGuard(Child);
+        impl Drop for LegacyGuard {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
         let dir = std::env::temp_dir().join(format!(
             "windows-mcp-live-{}",
             config::generate_token().unwrap()
         ));
         let manager = Manager::new(dir.clone(), dir.clone()).unwrap();
+        let _guard = BackendGuard(manager.clone());
         let mut config = manager.snapshot().config;
         config.port = TcpListener::bind(("127.0.0.1", 0))
             .unwrap()
@@ -485,6 +512,19 @@ mod tests {
             .port();
         config.lan_enabled = true;
         manager.save(config.clone()).unwrap();
+        // A specific-IP listener can coexist with a wildcard bind on Windows.
+        // Startup must detect it before launching a second backend.
+        let occupied = TcpListener::bind(("127.0.0.1", config.port)).unwrap();
+        let error = manager.start().err().unwrap();
+        assert_eq!(error.code, "port_in_use");
+        assert!(error.detail.contains(&format!("127.0.0.1:{}", config.port)));
+        assert!(
+            error
+                .detail
+                .contains(&format!("PID {}", std::process::id()))
+        );
+        assert_eq!(manager.snapshot().phase, "stopped");
+        drop(occupied);
         let started = manager.start().unwrap();
         assert_eq!(started.phase, "running", "{:?}", started.error);
         assert!(started.probe.unwrap().tool_count > 0);
@@ -499,7 +539,40 @@ mod tests {
             manager.save(config.clone()).err().unwrap().code,
             "stop_before_save"
         );
+        let probe = manager.test_connection().unwrap();
+        assert!(probe.tool_count > 0);
+        assert!(probe.verified_urls.contains(&config.local_url()));
+        for address in network::addresses().unwrap() {
+            assert!(
+                probe
+                    .verified_urls
+                    .contains(&format!("http://{}:{}/mcp", address.ip, config.port))
+            );
+        }
+        let address = network::addresses().unwrap().into_iter().next().unwrap();
+        let python = manager.repository.join(".venv/Scripts/python.exe");
+        let legacy = Command::new(python)
+            .args(["-c", "import socket,sys; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); s.bind((sys.argv[1],int(sys.argv[2]))); s.listen(1); print('ready',flush=True); sys.stdin.read()", &address.ip, &config.port.to_string()])
+            .creation_flags(0x0800_0000)
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit())
+            .spawn().unwrap();
+        let mut legacy = LegacyGuard(legacy);
+        let mut ready = String::new();
+        BufReader::new(legacy.0.stdout.take().unwrap())
+            .read_line(&mut ready)
+            .unwrap();
+        assert_eq!(ready.trim(), "ready");
+        let conflict = manager.test_connection().err().unwrap();
+        assert_eq!(conflict.code, "legacy_instance");
+        assert!(conflict.detail.contains(&address.ip));
+        let failed = manager.snapshot();
+        assert!(failed.probe.is_none());
+        assert_eq!(failed.phase, "running");
+        assert_eq!(failed.error.unwrap().code, "legacy_instance");
+        assert!(legacy.0.try_wait().unwrap().is_none());
+        drop(legacy);
         assert!(manager.test_connection().unwrap().tool_count > 0);
+        assert!(manager.snapshot().error.is_none());
         assert_eq!(manager.stop().phase, "stopped");
         assert!(TcpListener::bind(("127.0.0.1", config.port)).is_ok());
         fs::remove_file(dir.join("manager.json")).unwrap();
