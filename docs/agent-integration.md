@@ -129,3 +129,12 @@ the idle AI lease, release injected holds and acknowledge the exact owner.
 fresh snapshot and matching acknowledgement before every hardware command.
 Unavailable control revokes the acknowledgement; the robot must stop rather
 than automatically replay an input whose outcome is uncertain.
+
+When upgrading the manager that owns the current MCP connection, start its
+installer directly from Explorer/Win+R or from an independently verified
+interactive launcher. The old manager closes its Windows jobs during upgrade;
+an installer launched by its MCP backend can therefore terminate its own launch
+chain. `App.launch_executable` and a `Shell.Application.ShellExecute` call alone
+did not reliably escape that job in the A/B acceptance environment. Preserve
+the encrypted configuration, then verify the installed version and service
+restoration after upgrade.
