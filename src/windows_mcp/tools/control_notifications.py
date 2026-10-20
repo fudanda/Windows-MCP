@@ -210,7 +210,16 @@ class ControlToolGate(Middleware):
             # Explicit opt-out only: a failed enabled controller still fails closed.
             # Keep shared desktop operations serialized, without creating a lease.
             async with self._call_lock:
-                return await call_next(context)
+                from windows_mcp.desktop.control import ControlBlocked
+
+                try:
+                    token = self.controller.begin_unprotected_call()
+                except ControlBlocked as blocked:
+                    raise self._blocked(blocked) from None
+                try:
+                    return await call_next(context)
+                finally:
+                    self.controller.end_call(token)
         # Waiting behind an already running external command must not hide a
         # user takeover. Poll ownership while waiting, then recheck under lock.
         from windows_mcp.desktop.control import ControlBlocked

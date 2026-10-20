@@ -12,6 +12,7 @@ from windows_mcp.desktop.control_context import current_token, current_steps, ge
 from windows_mcp.desktop.control_ledger import InputLedger
 from windows_mcp.desktop import control_hooks
 from windows_mcp.desktop.control_worker import run_control_worker
+from windows_mcp.desktop.control_handoff import DesktopHandoff
 from windows_mcp.desktop.control_win32 import (
     _MouseHookData as _MouseHookData,  # Keep hook test helpers on this module.
     _KeyHookData as _KeyHookData,
@@ -81,6 +82,7 @@ class ControlCoordinator:
         self._rotate = False
         self._fault_token = object()
         self._rehook_completed = None
+        self.handoff = DesktopHandoff()
 
     def subscribe(self, callback: Callable[[dict], None]) -> None:
         with self._lock:
@@ -254,6 +256,8 @@ class ControlCoordinator:
         now = time.monotonic()
         with self._lock:
             changed = self._set_locked("unavailable") if self._emergency else self._tick_locked(now)
+            if self.handoff.request_owner() is not None:
+                raise ControlBlocked("HARDWARE_CONTROL", self._snapshot_locked(now))
             if self._pressed or self._mouse_down:
                 raise ControlBlocked("PHYSICAL_INPUT_HELD", self._snapshot_locked(now))
             if (
@@ -291,6 +295,14 @@ class ControlCoordinator:
             finally:
                 self._begin_notification.active = False
         return token
+
+    def begin_unprotected_call(self) -> int:
+        """Count calls even when hooks were explicitly disabled by the user."""
+        with self._lock:
+            if self.handoff.request_owner() is not None:
+                raise ControlBlocked("HARDWARE_CONTROL", self._snapshot_locked(time.monotonic()))
+            self._active_calls += 1
+            return self._generation
 
     def checkpoint(self, token: int) -> None:
         with self._lock:
@@ -341,9 +353,47 @@ class ControlCoordinator:
             if self._state in ("ai", "takeover_pending") and not self._active_calls:
                 self._lease_until = time.monotonic() + 15.0
 
+    def publish_handoff(self) -> dict:
+        """Acknowledge only after an idle AI lease has released injected holds."""
+        requested = self.handoff.request_owner()
+        with self._lock:
+            if self._emergency or self._stop.is_set():
+                changed = self._set_locked("unavailable")
+            else:
+                if requested and self._active_calls == 0:
+                    self._lease_until = 0.0
+                changed = self._tick_locked(time.monotonic())
+            status = self._snapshot_locked(time.monotonic())
+        if changed:
+            self._notify(status)
+        # _notify releases holds and can fail open; obtain the final state.
+        with self._lock:
+            status = self._snapshot_locked(time.monotonic())
+            safe = (
+                not self._active_calls
+                and not self._suppress
+                and not self._emergency
+                and not self._stop.is_set()
+            )
+            prior = self.handoff.acknowledged_owner
+            ack = (
+                requested
+                if safe
+                and (
+                    status["state"] in ("ready", "disabled")
+                    or (status["state"] == "user" and requested == prior)
+                )
+                else None
+            )
+            self.handoff.acknowledged_owner = ack
+            last_input = self._last_physical_event
+        return self.handoff.publish(status, ack, last_input)
+
     def start(self) -> None:
         if not self.enabled:
             self.input_ledger.enable()
+            self._stop.clear()
+            self.handoff.start(self)
             return  # No physical input monitor, watchdog, or ownership notifications.
         if self._thread and self._thread.is_alive():
             if self._stop.is_set():
@@ -382,9 +432,11 @@ class ControlCoordinator:
             self._set_locked("user" if recent_input else "ready")
             result = self._snapshot_locked(now)
         self._notify(result)
+        self.handoff.start(self)
 
     def stop(self) -> None:
         if not self.enabled:
+            self._stop.set()
             self.input_ledger.block_new()
             self.input_ledger.release_all()
             return
@@ -416,6 +468,10 @@ class ControlCoordinator:
         self._delivered_mouse.clear()
         self._quarantine.clear()
         self._thread = self._watchdog = None
+        try:
+            self.publish_handoff()
+        except OSError:
+            pass
 
     def _fail_open(self) -> None:
         self._fault_token = object()  # Invalidate any older successful hook installation.

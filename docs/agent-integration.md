@@ -114,3 +114,18 @@ HTTP 传输适用于可信局域网；SHA-256 验证完整性，连接仍采用�
 - [桌面管理器与构建说明](../desktop/README.md)
 - [Codex 官方 Skill 文档](https://learn.chatgpt.com/docs/build-skills)
 - [Codex 官方 MCP 配置文档](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+# Hardware robot desktop handoff
+
+Manager 0.2.13 publishes a versioned ownership snapshot in the current user's
+`%LOCALAPPDATA%\Windows-MCP\desktop-control-v1\status.json`. A compatible hardware
+robot requests control through `request.json` with a random `ownerId`, protocol
+`version: 1` and a millisecond `updatedAt`, refreshed at least once a second.
+Requests expire after five seconds. These local files contain no credentials.
+
+New desktop MCP calls fail with `HARDWARE_CONTROL` while a request is live.
+An already running call finishes first. Only then can the coordinator release
+the idle AI lease, release injected holds and acknowledge the exact owner.
+`ControlStatus` and file transfers remain available. The robot must require a
+fresh snapshot and matching acknowledgement before every hardware command.
+Unavailable control revokes the acknowledgement; the robot must stop rather
+than automatically replay an input whose outcome is uncertain.
